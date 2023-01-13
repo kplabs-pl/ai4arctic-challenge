@@ -1,0 +1,9 @@
+jupyterlab
+xarray
+netCDF4
+numpy
+matplotlib
+torch
+tqdm
+sklearn
+ipywidgets
