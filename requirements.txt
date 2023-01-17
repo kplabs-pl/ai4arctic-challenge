@@ -1,9 +1,11 @@
+ipywidgets
 jupyterlab
-xarray
+matplotlib
+mlflow
 netCDF4
 numpy
-matplotlib
+pysftp
+scikit-learn
 torch
 tqdm
-scikit-learn
-ipywidgets
+xarray
