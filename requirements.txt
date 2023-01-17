@@ -5,5 +5,5 @@ numpy
 matplotlib
 torch
 tqdm
-sklearn
+scikit-learn
 ipywidgets
