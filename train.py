@@ -96,6 +96,12 @@ def prepare_train_options_for_logging(train_options: dict) -> dict:
 
 
 def main(run_name: str, *, remote_mlflow: bool = False, force_cpu_device: bool = False):
+    """Train ice detection network.
+
+    :param run_name: Name of the experiment run (will be used for logging, artifacts, etc.)
+    :param remote_mlflow: Enable remote mlflow logging
+    :param force_cpu_device: Use CPU device (default behaviour is autodetect GPU/MPS/fallback to CPU)
+    """
     train_options = setup_options(TRAIN_OPTIONS)
     print('Options initialised')
 
