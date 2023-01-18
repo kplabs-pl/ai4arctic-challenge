@@ -35,9 +35,9 @@ def setup_device(train_options: dict) -> torch.device:
         print(colour_str('GPU available!', 'green'))
         print('Total number of available devices: ', colour_str(torch.cuda.device_count(), 'orange'))
         device = torch.device(f"cuda:{train_options['gpu_id']}")
-    # elif torch.has_mps:
-    #     print(colour_str('MPS available!', 'green'))
-    #     device = torch.device('mps')
+    elif torch.has_mps:
+        print(colour_str('MPS available!', 'green'))
+        device = torch.device('mps')
     else:
         print(colour_str('GPU not available', 'red'))
         device = torch.device('cpu')
@@ -95,11 +95,11 @@ def prepare_train_options_for_logging(train_options: dict) -> dict:
     return ret
 
 
-def main(run_name: str, *, remote_mlflow: bool = False):
+def main(run_name: str, *, remote_mlflow: bool = False, force_cpu_device: bool = False):
     train_options = setup_options(TRAIN_OPTIONS)
     print('Options initialised')
 
-    device = setup_device(train_options)
+    device = setup_device(train_options) if not force_cpu_device else torch.device('cpu')
     print('Device initialised')
 
     dataloader, dataloader_val = setup_dataset(train_options)
