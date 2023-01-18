@@ -1,3 +1,4 @@
+einops
 ipywidgets
 jupyterlab
 matplotlib
