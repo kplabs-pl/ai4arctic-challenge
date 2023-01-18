@@ -5,8 +5,8 @@ from utils import CHARTS, FLOE_LOOKUP, SCENE_VARIABLES, SIC_LOOKUP, SOD_LOOKUP
 
 TRAIN_OPTIONS = {
     # -- Training options -- #
-    'path_to_processed_data': os.environ['AI4ARCTIC_DATA'],  # Replace with data directory path.
-    'path_to_env': os.environ['AI4ARCTIC_ENV'],  # Replace with environmment directory path.
+    'path_to_processed_data': './data/ai4arctic_challenge/',  # Replace with data directory path.
+    'path_to_env': './',  # Replace with environmment directory path.
     'lr': 0.0001,  # Optimizer learning rate.
     'epochs': 50,  # Number of epochs before training stop (default 50).
     'epoch_len': 500,  # Number of batches for each epoch (default 500).
@@ -48,6 +48,8 @@ TRAIN_OPTIONS = {
     'gpu_id': 0,  # Index of GPU. In case of multiple GPUs.
     'num_workers': 4,  # Number of parallel processes to fetch data.
     'num_workers_val': 1,  # Number of parallel processes during validation.
+    # -- Model selection -- #
+    'model': 'ice_transformer',  # Model architecture ('unet' or `ice_transformer')
     # -- U-Net Options -- #
     'unet_conv_filters': [16, 32, 64, 64],  # Number of filters in the U-Net.
     'conv_kernel_size': (3, 3),  # Size of convolutional kernels.

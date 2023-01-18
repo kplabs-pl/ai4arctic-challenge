@@ -6,10 +6,6 @@ import json
 import os
 from tempfile import TemporaryDirectory
 
-# -- Environmental variables -- #
-os.environ['AI4ARCTIC_DATA'] = './data/ai4arctic_challenge'  # Fill in directory for data location.
-os.environ['AI4ARCTIC_ENV'] = './'  # Fill in directory for environment with Ai4Arctic get-started package.
-
 import clize
 import mlflow
 import numpy as np
@@ -20,6 +16,7 @@ from tqdm import tqdm  # Progress bar
 from functions import (  # Functions to calculate metrics and show the relevant chart colorbar.
     compute_metrics,
 )
+from ice_transformer import IceTransformer
 from loaders import (  # Custom dataloaders for regular training and validation.
     AI4ArcticChallengeDataset,
     AI4ArcticChallengeTestDataset,
@@ -84,7 +81,11 @@ def setup_dataset(train_options) -> tuple[torch.utils.data.DataLoader, torch.uti
 
 
 def setup_model(train_options: dict) -> torch.nn.Module:
-    model = UNet(options=train_options)
+    match train_options['model']:
+        case 'unet':
+            model = UNet(options=train_options)
+        case 'ice_transformer':
+            model = IceTransformer(len(train_options['train_variables']), 64)
     return model
 
 
