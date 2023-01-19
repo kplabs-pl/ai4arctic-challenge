@@ -1,0 +1,4 @@
+.dvc/
+.pytest_cache/
+.venv/
+data/
