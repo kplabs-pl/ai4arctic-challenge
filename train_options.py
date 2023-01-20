@@ -6,7 +6,7 @@ TRAIN_OPTIONS = {
     'path_to_processed_data': './data/ai4arctic_challenge/',  # Replace with data directory path.
     'path_to_env': './',  # Replace with environmment directory path.
     'lr': 0.0001,  # Optimizer learning rate.
-    'epochs': 50,  # Number of epochs before training stop (default 50).
+    'epochs': 75,  # Number of epochs before training stop (default 50).
     'epoch_len': 500,  # Number of batches for each epoch (default 500).
     'patch_size': 256,  # Size of patches sampled. Used for both Width and Height (default 256).
     'batch_size': 8,  # Number of patches for each batch.
