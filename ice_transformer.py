@@ -128,7 +128,6 @@ class IceTransformer(torch.nn.Module):
         self.patch_size = patch_size
         self.num_heads = 4
         self.num_channels_conv = 64
-
         self.spc_spt_tf = SpectralSpatialCrossTransformer(channels, self.num_channels_conv, patch_size, self.num_heads)
 
         self.double_conv_res_block = DoubleConvResidualBlock(self.num_channels_conv)
