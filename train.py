@@ -44,7 +44,15 @@ def setup_device(train_options: dict) -> torch.device:
     return device
 
 
-def setup_options(options: dict) -> dict:
+def setup_options(options: dict, short_training: bool = False) -> dict:
+    options = options.copy()
+
+    # Overwrite options for short training
+    if short_training:
+        options['epochs'] = 1
+        options['epoch_len'] = 5
+        options['num_val_scenes'] = 1
+
     # Get options for variables, amsrenv grid, cropping and upsampling.
     train_options = get_variable_options(options.copy())
 
@@ -95,14 +103,15 @@ def prepare_train_options_for_logging(train_options: dict) -> dict:
     return ret
 
 
-def main(run_name: str, *, remote_mlflow: bool = False, force_cpu_device: bool = False):
+def main(run_name: str, *, remote_mlflow: bool = False, force_cpu_device: bool = False, short_training: bool = False):
     """Train ice detection network.
 
     :param run_name: Name of the experiment run (will be used for logging, artifacts, etc.)
     :param remote_mlflow: Enable remote mlflow logging
     :param force_cpu_device: Use CPU device (default behaviour is autodetect GPU/MPS/fallback to CPU)
+    :param short_training: Overwrite settings for a smaller num of epochs (useful for sanity runs)
     """
-    train_options = setup_options(TRAIN_OPTIONS)
+    train_options = setup_options(TRAIN_OPTIONS, short_training=short_training)
     print('Options initialised')
 
     device = setup_device(train_options) if not force_cpu_device else torch.device('cpu')
@@ -128,14 +137,15 @@ def main(run_name: str, *, remote_mlflow: bool = False, force_cpu_device: bool =
     }
     print('Training setup complete')
 
-    best_combined_score = 0  # Best weighted model score.
+    best_combined_score = float('-inf')  # Best weighted model score.
 
     if remote_mlflow:
         mlflow.set_tracking_uri(MLFLOW_URI)
 
     mlflow.set_experiment(experiment_name=EXPERIMENT_NAME)
-    with mlflow.start_run(run_name=run_name) as run, TemporaryDirectory() as artifacts_tmp_dir:
+    with mlflow.start_run(run_name=run_name), TemporaryDirectory() as artifacts_tmp_dir:
         mlflow.log_params(prepare_train_options_for_logging(TRAIN_OPTIONS))
+        best_model_val_epoch = 0
         best_model_artifact_path = os.path.join(artifacts_tmp_dir, 'ice_best_model.pt')
 
         # -- Training Loop -- #
@@ -185,10 +195,15 @@ def main(run_name: str, *, remote_mlflow: bool = False, force_cpu_device: bool =
                 mlflow.log_metric('batch_loss', loss_batch, step=epoch * train_options['epoch_len'] + i)
                 mlflow.log_metric('mean_batch_loss_in_epoch', loss_epoch, step=epoch * train_options['epoch_len'] + i)
                 del output, batch_x, batch_y  # Free memory
+
+            loss_batch = loss_batch.detach().item()  # For printing after the validation loop.
+            print(f'Epoch last batch loss: {loss_batch:.3f}')
+            print(f'Mean epoch loss: {loss_epoch:.3f}')
+            mlflow.log_metric('epoch_last_batch_loss', loss_batch, step=epoch)
+            mlflow.log_metric('mean_epoch_loss', loss_epoch, step=epoch)
             del loss_sum
 
             # -- Validation Loop -- #
-            loss_batch = loss_batch.detach().item()  # For printing after the validation loop.
 
             # - Stores the output and the reference pixels to calculate the scores after inference on all the scenes.
             outputs_flat = {chart: np.array([]) for chart in train_options['charts']}
@@ -226,8 +241,6 @@ def main(run_name: str, *, remote_mlflow: bool = False, force_cpu_device: bool =
                 metrics=train_options['chart_metric'],
             )
 
-            print(f'Epoch last batch loss: {loss_batch:.3f}')
-            mlflow.log_metric('epoch_last_batch_loss', loss_batch, step=epoch)
             print(f'\nEpoch {epoch} score:')
             for chart in train_options['charts']:
                 print(f"{chart} {train_options['chart_metric'][chart]['func'].__name__}: {scores[chart]}%")
@@ -238,6 +251,7 @@ def main(run_name: str, *, remote_mlflow: bool = False, force_cpu_device: bool =
             # If the scores is better than the previous epoch, then save the u and rename the image to best_validation.
             if combined_score > best_combined_score:
                 best_combined_score = combined_score
+                best_model_val_epoch = epoch
                 torch.save(
                     {
                         'model_state_dict': net.state_dict(),
@@ -247,6 +261,7 @@ def main(run_name: str, *, remote_mlflow: bool = False, force_cpu_device: bool =
                     best_model_artifact_path,
                 )
             del inf_ys_flat, outputs_flat  # Free memory.
+        mlflow.log_metric('best_model_val_epoch', best_model_val_epoch)
         mlflow.log_artifact(best_model_artifact_path)
 
 

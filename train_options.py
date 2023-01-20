@@ -1,5 +1,3 @@
-import os
-
 from functions import f1_metric, r2_metric
 from utils import CHARTS, FLOE_LOOKUP, SCENE_VARIABLES, SIC_LOOKUP, SOD_LOOKUP
 
