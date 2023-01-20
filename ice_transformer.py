@@ -54,28 +54,29 @@ def process_in_patches(
     return merged
 
 
-class SpectralSpatialCrossTransfrormer(torch.nn.Module):
-    def __init__(self, channels: int, spatial_size: int, num_heads: int):
+class SpectralSpatialCrossTransformer(torch.nn.Module):
+    def __init__(self, in_channels: int, out_channels: int, spatial_size: int, num_heads: int):
         super().__init__()
 
-        self.channels = channels
+        self.in_channels = in_channels
+        self.out_channels = out_channels
         self.spatial_size = spatial_size
 
         # Spectral, spatial self attention
-        self.as_ch = torch.nn.MultiheadAttention(channels, num_heads)
+        self.as_ch = torch.nn.MultiheadAttention(in_channels, num_heads)
         self.as_sp = torch.nn.MultiheadAttention(spatial_size**2, num_heads)
         # Spectral-spatial, spatial-spectral cross attention
-        self.ac_ch = torch.nn.MultiheadAttention(channels, num_heads)
+        self.ac_ch = torch.nn.MultiheadAttention(in_channels, num_heads)
         self.ac_sp = torch.nn.MultiheadAttention(spatial_size**2, num_heads)
 
-        self.final_conv = torch.nn.Conv2d(channels * 2, channels, (3, 3), padding=(1, 1))
+        self.final_conv = torch.nn.Conv2d(in_channels * 2, out_channels, (3, 3), padding=(1, 1))
 
     def forward(self, x):
         raise_if_not_batched_3d_tensor(x)
         b, c, h, w = x.shape
         if h != w != self.spatial_size:
             raise ValueError()
-        if c != self.channels:
+        if c != self.in_channels:
             raise ValueError()
 
         t_flat = x.reshape(b, c, h * w)
@@ -96,24 +97,50 @@ class SpectralSpatialCrossTransfrormer(torch.nn.Module):
         return out
 
 
+class DoubleConvResidualBlock(torch.nn.Module):
+    def __init__(self, channels: int):
+        super().__init__()
+        self._channels = channels
+
+        self.conv_1 = torch.nn.Conv2d(self._channels, self._channels, (3, 3), padding=(1, 1))
+        self.bn_1 = torch.nn.BatchNorm2d(self._channels)
+        self.conv_2 = torch.nn.Conv2d(self._channels, self._channels, (3, 3), padding=(1, 1))
+        self.bn_2 = torch.nn.BatchNorm2d(self._channels)
+        self.relu = torch.nn.ReLU()
+
+    def forward(self, x):
+        raise_if_not_batched_3d_tensor(x)
+        residual = x
+        x = self.conv_1(x)
+        x = self.bn_1(x)
+        x = self.conv_2(x)
+        x = self.bn_2(x)
+        x = x + residual
+        x = self.relu(x)
+        return x
+
+
 class IceTransformer(torch.nn.Module):
     def __init__(self, channels: int, patch_size: int):
         super().__init__()
 
         self.channels = channels
         self.patch_size = patch_size
+        self.num_heads = 4
+        self.num_channels_conv = 64
 
-        self.spc_spt_tf = SpectralSpatialCrossTransfrormer(channels, patch_size, 4)
+        self.spc_spt_tf = SpectralSpatialCrossTransformer(channels, self.num_channels_conv, patch_size, self.num_heads)
 
-        self.final_conv = torch.nn.Conv2d(self.channels, 32, (3, 3), padding=(1, 1))
-        self.output_conv_sic = torch.nn.Conv2d(32, 12, kernel_size=(1, 1), stride=(1, 1))
-        self.output_conv_sod = torch.nn.Conv2d(32, 7, kernel_size=(1, 1), stride=(1, 1))
-        self.output_conv_floe = torch.nn.Conv2d(32, 8, kernel_size=(1, 1), stride=(1, 1))
+        self.double_conv_res_block = DoubleConvResidualBlock(self.num_channels_conv)
+
+        self.output_conv_sic = torch.nn.Conv2d(self.num_channels_conv, 12, kernel_size=(1, 1), stride=(1, 1))
+        self.output_conv_sod = torch.nn.Conv2d(self.num_channels_conv, 7, kernel_size=(1, 1), stride=(1, 1))
+        self.output_conv_floe = torch.nn.Conv2d(self.num_channels_conv, 8, kernel_size=(1, 1), stride=(1, 1))
 
     def forward(self, x):
         raise_if_not_batched_3d_tensor(x)
         b, c, h, w = x.shape
 
         x = process_in_patches(x, self.patch_size, lambda p: self.spc_spt_tf(p))
-        x = self.final_conv(x)
+        x = self.double_conv_res_block(x)
         return {'SIC': self.output_conv_sic(x), 'SOD': self.output_conv_sod(x), 'FLOE': self.output_conv_floe(x)}
