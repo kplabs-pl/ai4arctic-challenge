@@ -6,16 +6,10 @@ from einops import rearrange
 
 def raise_if_not_batched_3d_tensor(tensor: torch.Tensor):
     if len(tensor.shape) != 4:
-        raise ValueError(
-            'Expected tensor to be 3D batched tensor (N, C, H, W), '
-            f'but got shape: {tensor.shape}'
-        )
+        raise ValueError('Expected tensor to be 3D batched tensor (N, C, H, W), ' f'but got shape: {tensor.shape}')
 
 
-def split_to_patches(
-    tensor: torch.Tensor,
-    patch_size: int
-) -> tuple[torch.Tensor, int, int]:
+def split_to_patches(tensor: torch.Tensor, patch_size: int) -> tuple[torch.Tensor, int, int]:
     raise_if_not_batched_3d_tensor(tensor)
     b, c, h, w = tensor.shape
     pad_h = -h % patch_size
@@ -24,9 +18,7 @@ def split_to_patches(
     padded = torch.nn.functional.pad(tensor, pad, mode='reflect')
     patches = padded.unfold(2, patch_size, patch_size).unfold(3, patch_size, patch_size)
     _, _, p_rows, p_cols, _, _ = patches.shape
-    patches = rearrange(
-        patches, 'b c p_rows p_cols h w -> (p_rows p_cols) b c h w'
-    )
+    patches = rearrange(patches, 'b c p_rows p_cols h w -> (p_rows p_cols) b c h w')
     return patches, p_rows, p_cols
 
 
@@ -45,17 +37,13 @@ def merge_patches(
     p, b, c, h, w = patches.shape
     p_r, p_c = patches_rows, patches_cols
 
-    patches = rearrange(
-        patches, '(p_r p_c) b c h w -> b c p_r p_c h w', p_r=p_r, p_c=p_c
-    )
+    patches = rearrange(patches, '(p_r p_c) b c h w -> b c p_r p_c h w', p_r=p_r, p_c=p_c)
     merged = patches.permute(0, 1, 2, 4, 3, 5).reshape(b, c, p_r * h, p_c * w)
     return merged[..., :oh, :ow]
 
 
 def process_in_patches(
-    tensor: torch.Tensor,
-    patch_size: int,
-    transform: Callable[[torch.Tensor], torch.Tensor]
+    tensor: torch.Tensor, patch_size: int, transform: Callable[[torch.Tensor], torch.Tensor]
 ) -> torch.Tensor:
     raise_if_not_batched_3d_tensor(tensor)
     b, c, h, w = tensor.shape
@@ -128,8 +116,4 @@ class IceTransformer(torch.nn.Module):
 
         x = process_in_patches(x, self.patch_size, lambda p: self.spc_spt_tf(p))
         x = self.final_conv(x)
-        return {
-            'SIC': self.output_conv_sic(x),
-            'SOD': self.output_conv_sod(x),
-            'FLOE': self.output_conv_floe(x)
-        }
+        return {'SIC': self.output_conv_sic(x), 'SOD': self.output_conv_sod(x), 'FLOE': self.output_conv_floe(x)}
