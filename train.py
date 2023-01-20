@@ -22,7 +22,7 @@ from loaders import (  # Custom dataloaders for regular training and validation.
     AI4ArcticChallengeTestDataset,
     get_variable_options,
 )
-from train_options import TRAIN_OPTIONS, UNET_MODEL_OPTIONS, TRANSFORMER_MODEL_OPTIONS
+from train_options import TRAIN_OPTIONS, TRANSFORMER_MODEL_OPTIONS, UNET_MODEL_OPTIONS
 from unet import UNet  # Convolutional Neural Network model
 from utils import colour_str
 
