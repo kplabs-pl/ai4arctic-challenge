@@ -22,7 +22,7 @@ from loaders import (  # Custom dataloaders for regular training and validation.
     AI4ArcticChallengeTestDataset,
     get_variable_options,
 )
-from train_options import TRAIN_OPTIONS
+from train_options import TRAIN_OPTIONS, UNET_MODEL_OPTIONS, TRANSFORMER_MODEL_OPTIONS
 from unet import UNet  # Convolutional Neural Network model
 from utils import colour_str
 
@@ -88,13 +88,17 @@ def setup_dataset(train_options) -> tuple[torch.utils.data.DataLoader, torch.uti
     return dataloader, dataloader_val
 
 
-def setup_model(train_options: dict) -> torch.nn.Module:
+def setup_model(train_options: dict) -> tuple[torch.nn.Module, dict]:
+    model: torch.nn.Module
+    model_options: dict
     match train_options['model']:
         case 'unet':
-            model = UNet(options=train_options)
+            model_options = UNET_MODEL_OPTIONS.copy()
+            model = UNet(options=train_options | model_options)
         case 'ice_transformer':
-            model = IceTransformer(len(train_options['train_variables']), 64)
-    return model
+            model_options = TRANSFORMER_MODEL_OPTIONS.copy()
+            model = IceTransformer(len(train_options['train_variables']), model_options['internal_patch_size'])
+    return model, model_options
 
 
 def prepare_train_options_for_logging(train_options: dict) -> dict:
@@ -121,7 +125,8 @@ def main(run_name: str, *, remote_mlflow: bool = False, force_cpu_device: bool =
     print('Data setup complete')
 
     # Setup U-Net model, adam optimizer, loss function and dataloader.
-    net = setup_model(train_options).to(device)
+    net, model_options = setup_model(train_options)
+    net = net.to(device)
     optimizer = torch.optim.Adam(list(net.parameters()), lr=train_options['lr'])
     torch.backends.cudnn.benchmark = (
         True  # Selects the kernel with the best performance for the GPU and given input size.
@@ -144,7 +149,7 @@ def main(run_name: str, *, remote_mlflow: bool = False, force_cpu_device: bool =
 
     mlflow.set_experiment(experiment_name=EXPERIMENT_NAME)
     with mlflow.start_run(run_name=run_name), TemporaryDirectory() as artifacts_tmp_dir:
-        mlflow.log_params(prepare_train_options_for_logging(TRAIN_OPTIONS))
+        mlflow.log_params(prepare_train_options_for_logging(TRAIN_OPTIONS) | model_options)
         best_model_val_epoch = 0
         best_model_artifact_path = os.path.join(artifacts_tmp_dir, 'ice_best_model.pt')
 
@@ -163,7 +168,7 @@ def main(run_name: str, *, remote_mlflow: bool = False, force_cpu_device: bool =
                 )
             ):
                 torch.cuda.empty_cache()  # Empties the GPU cache freeing up memory.
-                loss_batch = 0  # Reset from previous batch.
+                loss_batch = torch.Tensor([0]).to(device)  # Reset from previous batch.
 
                 # - Transfer to device.
                 batch_x = batch_x.to(device, non_blocking=True)
@@ -196,10 +201,10 @@ def main(run_name: str, *, remote_mlflow: bool = False, force_cpu_device: bool =
                 mlflow.log_metric('mean_batch_loss_in_epoch', loss_epoch, step=epoch * train_options['epoch_len'] + i)
                 del output, batch_x, batch_y  # Free memory
 
-            loss_batch = loss_batch.detach().item()  # For printing after the validation loop.
-            print(f'Epoch last batch loss: {loss_batch:.3f}')
+            loss_batch_float = loss_batch.detach().item()  # For printing after the validation loop.
+            print(f'Epoch last batch loss: {loss_batch_float:.3f}')
             print(f'Mean epoch loss: {loss_epoch:.3f}')
-            mlflow.log_metric('epoch_last_batch_loss', loss_batch, step=epoch)
+            mlflow.log_metric('epoch_last_batch_loss', loss_batch_float, step=epoch)
             mlflow.log_metric('mean_epoch_loss', loss_epoch, step=epoch)
             del loss_sum
 

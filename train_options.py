@@ -48,11 +48,17 @@ TRAIN_OPTIONS = {
     'num_workers_val': 1,  # Number of parallel processes during validation.
     # -- Model selection -- #
     'model': 'ice_transformer',  # Model architecture ('unet' or `ice_transformer')
-    # -- U-Net Options -- #
+}
+
+UNET_MODEL_OPTIONS = {
     'unet_conv_filters': [16, 32, 64, 64],  # Number of filters in the U-Net.
     'conv_kernel_size': (3, 3),  # Size of convolutional kernels.
     'conv_stride_rate': (1, 1),  # Stride rate of convolutional kernels.
     'conv_dilation_rate': (1, 1),  # Dilation rate of convolutional kernels.
     'conv_padding': (1, 1),  # Number of padded pixels in convolutional layers.
     'conv_padding_style': 'zeros',  # Style of padding.
+}
+
+TRANSFORMER_MODEL_OPTIONS = {
+    'internal_patch_size': 64,
 }
