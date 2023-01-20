@@ -47,7 +47,7 @@ TRAIN_OPTIONS = {
     'num_workers': 4,  # Number of parallel processes to fetch data.
     'num_workers_val': 1,  # Number of parallel processes during validation.
     # -- Model selection -- #
-    'model': 'ice_transformer',  # Model architecture ('unet' or `ice_transformer')
+    'model': 'unet',  # Model architecture ('unet' or `ice_transformer')
 }
 
 UNET_MODEL_OPTIONS = {
