@@ -216,7 +216,6 @@ def main(run_name: str, *, remote_mlflow: bool = False, force_cpu_device: bool =
             inf_ys_flat = {chart: np.array([]) for chart in train_options['charts']}
 
             net.eval()  # Set network to evaluation mode.
-            net.cpu()
             # - Loops though scenes in queue.
             for inf_x, inf_y, masks, name in tqdm(
                 iterable=dataloader_val,
@@ -229,7 +228,7 @@ def main(run_name: str, *, remote_mlflow: bool = False, force_cpu_device: bool =
 
                 # - Ensures that no gradients are calculated, which otherwise take up a lot of space on the GPU.
                 with torch.no_grad(), torch.cuda.amp.autocast(enabled=True if device == 'cuda' else False):
-                    inf_x = inf_x.to(torch.device('cpu'), non_blocking=True)
+                    inf_x = inf_x.to(device, non_blocking=True)
                     output = net(inf_x)
 
                 # - Final output layer, and storing of non masked pixels.
