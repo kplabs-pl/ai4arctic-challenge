@@ -136,6 +136,7 @@ class IceTransformer(torch.nn.Module):
         self.spc_spt_tf = SpectralSpatialCrossTransformer(channels, self.num_channels_conv, patch_size, self.num_heads)
 
         self.double_conv_res_block = DoubleConvResidualBlock(self.num_channels_conv)
+        self.final_conv = torch.nn.Conv2d(self.num_channels_conv, self.num_channels_conv, (3, 3), padding=(1, 1))
 
         self.output_conv_sic = torch.nn.Conv2d(self.num_channels_conv, 12, kernel_size=(1, 1), stride=(1, 1))
         self.output_conv_sod = torch.nn.Conv2d(self.num_channels_conv, 7, kernel_size=(1, 1), stride=(1, 1))
@@ -147,4 +148,5 @@ class IceTransformer(torch.nn.Module):
 
         x = process_in_patches(x, self.patch_size, lambda p: self.spc_spt_tf(p))
         x = self.double_conv_res_block(x)
+        x = self.final_conv(x)
         return {'SIC': self.output_conv_sic(x), 'SOD': self.output_conv_sod(x), 'FLOE': self.output_conv_floe(x)}
