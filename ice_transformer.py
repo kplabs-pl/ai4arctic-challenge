@@ -70,6 +70,7 @@ class SpectralSpatialCrossTransformer(torch.nn.Module):
         self.ac_sp = torch.nn.MultiheadAttention(spatial_size**2, num_heads)
 
         self.final_conv = torch.nn.Conv2d(in_channels * 2, out_channels, (3, 3), padding=(1, 1))
+        self.bn_final_conv = torch.nn.BatchNorm2d(out_channels)
 
     def forward(self, x):
         raise_if_not_batched_3d_tensor(x)
@@ -93,7 +94,8 @@ class SpectralSpatialCrossTransformer(torch.nn.Module):
         oc_sp_unflat = oc_sp.reshape(x.shape)
 
         concated = torch.concat([oc_ch_unflat, oc_sp_unflat], axis=1)
-        out = self.final_conv(concated)
+        out = self.bn_final_conv(self.final_conv(concated))
+
         return out
 
 
@@ -104,19 +106,19 @@ class DoubleConvResidualBlock(torch.nn.Module):
 
         self.conv_1 = torch.nn.Conv2d(self._channels, self._channels, (3, 3), padding=(1, 1))
         self.bn_1 = torch.nn.BatchNorm2d(self._channels)
+        self.relu_1 = torch.nn.ReLU()
         self.conv_2 = torch.nn.Conv2d(self._channels, self._channels, (3, 3), padding=(1, 1))
         self.bn_2 = torch.nn.BatchNorm2d(self._channels)
-        self.relu = torch.nn.ReLU()
+        self.relu_2 = torch.nn.ReLU()
 
     def forward(self, x):
         raise_if_not_batched_3d_tensor(x)
         residual = x
-        x = self.conv_1(x)
-        x = self.bn_1(x)
-        x = self.conv_2(x)
-        x = self.bn_2(x)
+        x = self.bn_1(self.conv_1(x))
+        x = self.relu_1(x)
+        x = self.bn_2(self.conv_2(x))
         x = x + residual
-        x = self.relu(x)
+        x = self.relu_2(x)
         return x
 
 
@@ -124,10 +126,13 @@ class IceTransformer(torch.nn.Module):
     def __init__(self, channels: int, patch_size: int):
         super().__init__()
 
+        # Parameters
         self.channels = channels
         self.patch_size = patch_size
         self.num_heads = 4
-        self.num_channels_conv = 64
+        self.num_channels_conv = 32
+
+        # Layers
         self.spc_spt_tf = SpectralSpatialCrossTransformer(channels, self.num_channels_conv, patch_size, self.num_heads)
 
         self.double_conv_res_block = DoubleConvResidualBlock(self.num_channels_conv)
