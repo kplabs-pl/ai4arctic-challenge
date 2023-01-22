@@ -6,10 +6,16 @@ from einops import rearrange
 
 def raise_if_not_batched_3d_tensor(tensor: torch.Tensor):
     if len(tensor.shape) != 4:
-        raise ValueError('Expected tensor to be 3D batched tensor (N, C, H, W), ' f'but got shape: {tensor.shape}')
+        raise ValueError(
+            'Expected tensor to be 3D batched tensor (N, C, H, W), '
+            f'but got shape: {tensor.shape}'
+        )
 
 
-def split_to_patches(tensor: torch.Tensor, patch_size: int) -> tuple[torch.Tensor, int, int]:
+def split_to_patches(
+    tensor: torch.Tensor,
+    patch_size: int
+) -> tuple[torch.Tensor, int, int]:
     raise_if_not_batched_3d_tensor(tensor)
     b, c, h, w = tensor.shape
     pad_h = -h % patch_size
@@ -18,7 +24,9 @@ def split_to_patches(tensor: torch.Tensor, patch_size: int) -> tuple[torch.Tenso
     padded = torch.nn.functional.pad(tensor, pad, mode='reflect')
     patches = padded.unfold(2, patch_size, patch_size).unfold(3, patch_size, patch_size)
     _, _, p_rows, p_cols, _, _ = patches.shape
-    patches = rearrange(patches, 'b c p_rows p_cols h w -> (p_rows p_cols) b c h w')
+    patches = rearrange(
+        patches, 'b c p_rows p_cols h w -> (p_rows p_cols) b c h w'
+    )
     return patches, p_rows, p_cols
 
 
@@ -37,13 +45,17 @@ def merge_patches(
     p, b, c, h, w = patches.shape
     p_r, p_c = patches_rows, patches_cols
 
-    patches = rearrange(patches, '(p_r p_c) b c h w -> b c p_r p_c h w', p_r=p_r, p_c=p_c)
+    patches = rearrange(
+        patches, '(p_r p_c) b c h w -> b c p_r p_c h w', p_r=p_r, p_c=p_c
+    )
     merged = patches.permute(0, 1, 2, 4, 3, 5).reshape(b, c, p_r * h, p_c * w)
     return merged[..., :oh, :ow]
 
 
 def process_in_patches(
-    tensor: torch.Tensor, patch_size: int, transform: Callable[[torch.Tensor], torch.Tensor]
+    tensor: torch.Tensor,
+    patch_size: int,
+    transform: Callable[[torch.Tensor], torch.Tensor]
 ) -> torch.Tensor:
     raise_if_not_batched_3d_tensor(tensor)
     b, c, h, w = tensor.shape
@@ -54,30 +66,28 @@ def process_in_patches(
     return merged
 
 
-class SpectralSpatialCrossTransformer(torch.nn.Module):
-    def __init__(self, in_channels: int, out_channels: int, spatial_size: int, num_heads: int):
+class SpectralSpatialCrossTransfrormer(torch.nn.Module):
+    def __init__(self, channels: int, spatial_size: int, num_heads: int):
         super().__init__()
 
-        self.in_channels = in_channels
-        self.out_channels = out_channels
+        self.channels = channels
         self.spatial_size = spatial_size
 
         # Spectral, spatial self attention
-        self.as_ch = torch.nn.MultiheadAttention(in_channels, num_heads)
+        self.as_ch = torch.nn.MultiheadAttention(channels, num_heads)
         self.as_sp = torch.nn.MultiheadAttention(spatial_size**2, num_heads)
         # Spectral-spatial, spatial-spectral cross attention
-        self.ac_ch = torch.nn.MultiheadAttention(in_channels, num_heads)
+        self.ac_ch = torch.nn.MultiheadAttention(channels, num_heads)
         self.ac_sp = torch.nn.MultiheadAttention(spatial_size**2, num_heads)
 
-        self.final_conv = torch.nn.Conv2d(in_channels * 2, out_channels, (3, 3), padding=(1, 1))
-        self.bn_final_conv = torch.nn.BatchNorm2d(out_channels)
+        self.final_conv = torch.nn.Conv2d(channels * 2, channels, (3, 3), padding=(1, 1))
 
     def forward(self, x):
         raise_if_not_batched_3d_tensor(x)
         b, c, h, w = x.shape
         if h != w != self.spatial_size:
             raise ValueError()
-        if c != self.in_channels:
+        if c != self.channels:
             raise ValueError()
 
         t_flat = x.reshape(b, c, h * w)
@@ -94,59 +104,32 @@ class SpectralSpatialCrossTransformer(torch.nn.Module):
         oc_sp_unflat = oc_sp.reshape(x.shape)
 
         concated = torch.concat([oc_ch_unflat, oc_sp_unflat], axis=1)
-        out = self.bn_final_conv(self.final_conv(concated))
-
+        out = self.final_conv(concated)
         return out
-
-
-class DoubleConvResidualBlock(torch.nn.Module):
-    def __init__(self, channels: int):
-        super().__init__()
-        self._channels = channels
-
-        self.conv_1 = torch.nn.Conv2d(self._channels, self._channels, (3, 3), padding=(1, 1))
-        self.bn_1 = torch.nn.BatchNorm2d(self._channels)
-        self.relu_1 = torch.nn.ReLU()
-        self.conv_2 = torch.nn.Conv2d(self._channels, self._channels, (3, 3), padding=(1, 1))
-        self.bn_2 = torch.nn.BatchNorm2d(self._channels)
-        self.relu_2 = torch.nn.ReLU()
-
-    def forward(self, x):
-        raise_if_not_batched_3d_tensor(x)
-        residual = x
-        x = self.bn_1(self.conv_1(x))
-        x = self.relu_1(x)
-        x = self.bn_2(self.conv_2(x))
-        x = x + residual
-        x = self.relu_2(x)
-        return x
 
 
 class IceTransformer(torch.nn.Module):
     def __init__(self, channels: int, patch_size: int):
         super().__init__()
 
-        # Parameters
         self.channels = channels
         self.patch_size = patch_size
-        self.num_heads = 4
-        self.num_channels_conv = 32
 
-        # Layers
-        self.spc_spt_tf = SpectralSpatialCrossTransformer(channels, self.num_channels_conv, patch_size, self.num_heads)
+        self.spc_spt_tf = SpectralSpatialCrossTransfrormer(channels, patch_size, 4)
 
-        self.double_conv_res_block = DoubleConvResidualBlock(self.num_channels_conv)
-        self.final_conv = torch.nn.Conv2d(self.num_channels_conv, self.num_channels_conv, (3, 3), padding=(1, 1))
-
-        self.output_conv_sic = torch.nn.Conv2d(self.num_channels_conv, 12, kernel_size=(1, 1), stride=(1, 1))
-        self.output_conv_sod = torch.nn.Conv2d(self.num_channels_conv, 7, kernel_size=(1, 1), stride=(1, 1))
-        self.output_conv_floe = torch.nn.Conv2d(self.num_channels_conv, 8, kernel_size=(1, 1), stride=(1, 1))
+        self.final_conv = torch.nn.Conv2d(self.channels, 32, (3, 3), padding=(1, 1))
+        self.output_conv_sic = torch.nn.Conv2d(32, 12, kernel_size=(1, 1), stride=(1, 1))
+        self.output_conv_sod = torch.nn.Conv2d(32, 7, kernel_size=(1, 1), stride=(1, 1))
+        self.output_conv_floe = torch.nn.Conv2d(32, 8, kernel_size=(1, 1), stride=(1, 1))
 
     def forward(self, x):
         raise_if_not_batched_3d_tensor(x)
         b, c, h, w = x.shape
 
         x = process_in_patches(x, self.patch_size, lambda p: self.spc_spt_tf(p))
-        x = self.double_conv_res_block(x)
         x = self.final_conv(x)
-        return {'SIC': self.output_conv_sic(x), 'SOD': self.output_conv_sod(x), 'FLOE': self.output_conv_floe(x)}
+        return {
+            'SIC': self.output_conv_sic(x),
+            'SOD': self.output_conv_sod(x),
+            'FLOE': self.output_conv_floe(x)
+        }
