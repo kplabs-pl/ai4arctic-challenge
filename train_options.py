@@ -60,5 +60,5 @@ UNET_MODEL_OPTIONS = {
 }
 
 TRANSFORMER_MODEL_OPTIONS = {
-    'internal_patch_size': 64,
+    'internal_patch_size': 128,
 }
