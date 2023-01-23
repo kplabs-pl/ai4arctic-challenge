@@ -158,7 +158,6 @@ def main(run_name: str, *, remote_mlflow: bool = False, force_cpu_device: bool =
             gc.collect()  # Collect garbage to free memory.
             loss_sum = torch.tensor([0.0])  # To sum the batch losses during the epoch.
             net.train()  # Set network to evaluation mode.
-            net.to(device)
 
             # Loops though batches in queue.
             for i, (batch_x, batch_y) in enumerate(
