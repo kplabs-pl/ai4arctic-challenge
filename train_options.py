@@ -13,7 +13,7 @@ TRAIN_OPTIONS = {
     'loader_upsampling': 'nearest',  # How to upscale low resolution variables to high resolution.
     # -- Data prepraration lookups and metrics.
     'train_variables': SCENE_VARIABLES,  # Contains the relevant variables in the scenes.
-    'charts': ['SOD'],  # Charts to train on.
+    'charts': ['FLOE'],  # Charts to train on.
     'n_classes': {  # number of total classes in the reference charts, including the mask.
         'SIC': SIC_LOOKUP['n_classes'],
         'SOD': SOD_LOOKUP['n_classes'],
