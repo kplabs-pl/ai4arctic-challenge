@@ -1,7 +1,9 @@
 import json
+import os
+import stat
 from math import ceil
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Mapping
 from warnings import warn
 
 import clize
@@ -37,6 +39,30 @@ EXPORT_OPTIONS = {
     },
     'spacing': (999.0, 1.0, 1.0),
 }
+
+
+DATASET_SELECTION_SCRIPT_NAME = 'setds'
+DATASET_SELECTION_SCRIPT_BODY = '''#!/usr/bin/env sh
+set -eu
+
+USAGE="setds { SIC | SOD | FLOE }"
+
+if [ $# -ne 1 ] || ([ "$1" != "SIC" ] && [ "$1" != "SOD" ] && [ "$1" != "FLOE" ]); then
+    echo "Invalid argument; usage: ${USAGE}" && exit 22
+fi
+
+DS_DIR="$(dirname $0)"
+DS_TYPE="$1"
+
+LABLES_DIR="$DS_DIR/labelsTr"
+DATASET_JSON="$DS_DIR/dataset.json"
+
+[ -d "$LABLES_DIR" ] && rm -r "$LABLES_DIR"
+[ -h "$DATASET_JSON" ] && rm "$DATASET_JSON"
+
+ln -s "${LABLES_DIR}${DS_TYPE}" "$LABLES_DIR"
+ln -s "${DS_DIR}/dataset${DS_TYPE}.json" "$DATASET_JSON"
+'''
 
 
 def warn_if_not_chw(array: np.ndarray):
@@ -83,20 +109,20 @@ def extract_sample_x(scene_ds: xr.Dataset, sar_variables: list[str], amsrenv_var
     return x
 
 
-def extract_sample_y(scene: xr.Dataset, charts: list[str]) -> np.ndarray:
+def extract_sample_y(scene: xr.Dataset, charts: list[str]) -> dict[str, np.ndarray]:
     y = {chart: np.expand_dims(scene[chart].values, 0) for chart in charts}
     return y
 
 
-def save_for_nnunet(array: np.ndarray, output_dir: Path, output_name: str, spacing: int, band_num: int | None = None):
+def save_for_nnunet(array: np.ndarray, output_dir: Path, output_name: str, spacing: tuple, band_num: int | None = None):
     if band_num:
-        array = sitk.GetImageFromArray(array.astype(np.float32))
-        array.SetSpacing(np.array(spacing)[::-1])
-        sitk.WriteImage(array, str(output_dir / output_name) + f'_{band_num:04}.nii.gz')
+        sitk_img = sitk.GetImageFromArray(array.astype(np.float32))
+        sitk_img.SetSpacing(np.array(spacing)[::-1])
+        sitk.WriteImage(sitk_img, str(output_dir / output_name) + f'_{band_num:04}.nii.gz')
     else:
-        array = sitk.GetImageFromArray(array.astype(np.uint8))
-        array.SetSpacing(np.array(spacing)[::-1])
-        sitk.WriteImage(array, str(output_dir / output_name) + '.nii.gz')
+        sitk_img = sitk.GetImageFromArray(array.astype(np.uint8))
+        sitk_img.SetSpacing(np.array(spacing)[::-1])
+        sitk.WriteImage(sitk_img, str(output_dir / output_name) + '.nii.gz')
 
 
 def save_x_patches_for_nnunet(x_array_patches: np.ndarray, output_dir_path: Path, scene_name: str, spacing: tuple):
@@ -114,14 +140,18 @@ def save_y_chart_patches_for_nnunet(
     charts = y_array_patches.keys() & output_dir_paths.keys()
     for chart in charts:
         if y_array_patches[chart].ndim != 4:
-            raise ValueError(f'Expected array to have format PATCH x CHW but got {y_array_patches.shape}')
+            raise ValueError(f'Expected array to have format PATCH x CHW but got {y_array_patches[chart].shape}')
         warn_if_not_chw(y_array_patches[chart][0])
         for i, y_array in enumerate(y_array_patches[chart]):
             save_for_nnunet(y_array[0], output_dir_paths[chart], f'{scene_name}_P{i:04}', spacing)
 
 
 def generate_nnunet_ds_metadata(
-    output_json_path: Path, training_dir_path: Path, test_dir_path: Path | None, bands: list[str], labels: dict[int, str]
+    output_json_path: Path,
+    training_dir_path: Path,
+    test_dir_path: Path | None,
+    bands: list[str],
+    labels: Mapping[int, str | int],
 ):
     generate_dataset_json(
         output_file=str(output_json_path),
@@ -135,6 +165,14 @@ def generate_nnunet_ds_metadata(
         dataset_reference='https://platform.ai4eo.eu/auto-ice/data',
         dataset_release='0.0',
     )
+
+
+def make_dataset_selection_script(output_dir: Path):
+    output_dir.mkdir(parents=True, exist_ok=True)
+    script_file_path = output_dir / DATASET_SELECTION_SCRIPT_NAME
+    with open(script_file_path, 'w') as f:
+        f.write(DATASET_SELECTION_SCRIPT_BODY)
+    os.chmod(script_file_path, os.stat(script_file_path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
 
 def main(*, limit: int = None):
@@ -164,15 +202,26 @@ def main(*, limit: int = None):
         }
         save_x_patches_for_nnunet(x_patches, output_dir_train_path, scene_name, options['spacing'])
         save_y_chart_patches_for_nnunet(y_patches, output_dir_labels_paths, scene_name, options['spacing'])
+    print('Generated NIfTI files for train samples')
 
-    generate_nnunet_ds_metadata(
-        output_dir / 'dataset_SIC.json', output_dir_train_path, None, SCENE_VARIABLES, SIC_GROUPS
-    )
-    generate_nnunet_ds_metadata(
-        output_dir / 'dataset_SOD.json', output_dir_train_path, None, SCENE_VARIABLES, SOD_GROUPS
-    )
-    generate_nnunet_ds_metadata(
-        output_dir / 'dataset_FLOE.json', output_dir_train_path, None, SCENE_VARIABLES, FLOE_GROUPS
+    if 'SIC' in options['charts']:
+        generate_nnunet_ds_metadata(
+            output_dir / 'dataset_SIC.json', output_dir_train_path, None, SCENE_VARIABLES, SIC_GROUPS
+        )
+    if 'SOD' in options['charts']:
+        generate_nnunet_ds_metadata(
+            output_dir / 'dataset_SOD.json', output_dir_train_path, None, SCENE_VARIABLES, SOD_GROUPS
+        )
+    if 'FLOE' in options['charts']:
+        generate_nnunet_ds_metadata(
+            output_dir / 'dataset_FLOE.json', output_dir_train_path, None, SCENE_VARIABLES, FLOE_GROUPS
+        )
+    print('Generated metadata JSON files for given datatsets')
+
+    make_dataset_selection_script(output_dir)
+    print(
+        f'Created dataset selection script at {output_dir/DATASET_SELECTION_SCRIPT_NAME}, use it to choose desired '
+        'dataset type (SIC/SOD/FLOE) before running nnU-Net'
     )
 
 
