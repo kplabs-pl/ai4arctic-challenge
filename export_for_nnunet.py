@@ -115,6 +115,12 @@ def extract_sample_y(scene: xr.Dataset, charts: list[str]) -> dict[str, np.ndarr
 
 
 def save_for_nnunet(array: np.ndarray, output_dir: Path, output_name: str, spacing: tuple, band_num: int | None = None):
+    if array.ndim != 2:
+        raise ValueError(
+            'Expected two dimensional array (x, y), single channel, single modality but got one with shape: '
+            f'{array.shape}'
+        )
+    array = np.expand_dims(array, axis=0)
     if band_num:
         sitk_img = sitk.GetImageFromArray(array.astype(np.float32))
         sitk_img.SetSpacing(np.array(spacing)[::-1])
