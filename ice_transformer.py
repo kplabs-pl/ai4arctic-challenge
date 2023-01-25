@@ -66,7 +66,7 @@ def process_in_patches(
     return merged
 
 
-class SpectralSpatialCrossTransfrormer(torch.nn.Module):
+class SpectralSpatialCrossTransformer(torch.nn.Module):
     def __init__(self, channels: int, spatial_size: int, num_heads: int):
         super().__init__()
 
@@ -115,7 +115,7 @@ class IceTransformer(torch.nn.Module):
         self.channels = channels
         self.patch_size = patch_size
 
-        self.spc_spt_tf = SpectralSpatialCrossTransfrormer(channels, patch_size, 4)
+        self.spc_spt_tf = SpectralSpatialCrossTransformer(channels, patch_size, 4)
 
         self.final_conv = torch.nn.Conv2d(self.channels, 32, (3, 3), padding=(1, 1))
         self.output_conv_sic = torch.nn.Conv2d(32, 12, kernel_size=(1, 1), stride=(1, 1))
