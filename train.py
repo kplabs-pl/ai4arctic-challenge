@@ -202,8 +202,8 @@ def train(
             # -- Validation Loop -- #
 
             # - Stores the output and the reference pixels to calculate the scores after inference on all the scenes.
-            outputs_flat = {chart: np.array([]) for chart in train_options['charts']}
-            inf_ys_flat = {chart: np.array([]) for chart in train_options['charts']}
+            outputs_flat = {chart: np.array([], dtype=np.float32) for chart in train_options['charts']}
+            inf_ys_flat = {chart: np.array([], dtype=np.float32) for chart in train_options['charts']}
 
             model.eval()  # Set network to evaluation mode.
             # - Loops though scenes in queue.
@@ -223,9 +223,11 @@ def train(
 
                 # - Final output layer, and storing of non masked pixels.
                 for chart in train_options['charts']:
-                    output[chart] = torch.argmax(output[chart], dim=1).squeeze().cpu().numpy()
+                    output[chart] = torch.argmax(output[chart], dim=1).squeeze().cpu().numpy().astype(np.float32)
                     outputs_flat[chart] = np.append(outputs_flat[chart], output[chart][~masks[chart]])
-                    inf_ys_flat[chart] = np.append(inf_ys_flat[chart], inf_y[chart][~masks[chart]].numpy())
+                    inf_ys_flat[chart] = np.append(
+                        inf_ys_flat[chart], inf_y[chart][~masks[chart]].numpy().astype(np.float32)
+                    )
 
                 del inf_x, inf_y, masks, output  # Free memory.
 
