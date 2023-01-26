@@ -131,13 +131,17 @@ def save_for_nnunet(array: np.ndarray, output_dir: Path, output_name: str, spaci
         sitk.WriteImage(sitk_img, str(output_dir / output_name) + '.nii.gz')
 
 
+def save_x_for_nnunet(x_array: np.ndarray, output_dir_path: Path, name: str, spacing: tuple):
+    for b, band in enumerate(x_array):
+        save_for_nnunet(band, output_dir_path, name, spacing, band_num=b)
+
+
 def save_x_patches_for_nnunet(x_array_patches: np.ndarray, output_dir_path: Path, scene_name: str, spacing: tuple):
     if x_array_patches.ndim != 4:
         raise ValueError(f'Expected array to have format PATCH x CHW but got {x_array_patches.shape}')
     warn_if_not_chw(x_array_patches[0])
     for i, x_array in enumerate(x_array_patches):
-        for b, band in enumerate(x_array):
-            save_for_nnunet(band, output_dir_path, f'{scene_name}_P{i:04}', spacing, band_num=b)
+        save_x_for_nnunet(x_array, output_dir_path, f'{scene_name}_P{i:04}', spacing)
 
 
 def save_y_chart_patches_for_nnunet(
@@ -182,24 +186,32 @@ def make_dataset_selection_script(output_dir: Path):
 
 
 def main(*, limit: int = None):
-    input_dir = Path('./data/ai4arctic_challenge')
+    input_train_dir = Path('./data/ai4arctic_challenge')
+    input_test_dir = Path('./data/ai4arctic_challenge_test')
     output_dir = Path('./exports/nnunet_ds')
-    datalists_path = Path('./datalists/dataset.json')
+    datalists_train_path = Path('./datalists/dataset.json')
+    datalists_test_path = Path('./datalists/testset.json')
 
     options = get_variable_options(EXPORT_OPTIONS.copy())
 
+    # Prepare paths and dirs
     output_dir_train_path = output_dir / 'imagesTr'
+    output_dir_test_path = output_dir / 'imagesTs'
     output_dir_labels_paths = {chart: output_dir / f'labelsTr{chart}' for chart in options['charts']}
+
     output_dir_train_path.mkdir(parents=True, exist_ok=True)
+    output_dir_test_path.mkdir(parents=True, exist_ok=True)
     for chart in output_dir_labels_paths:
         output_dir_labels_paths[chart].mkdir(parents=True, exist_ok=True)
 
-    with open(datalists_path) as f:
+    # Prepare train patches
+    with open(datalists_train_path) as f:
         scene_files = json.loads(f.read())
 
-    for scene_file in tqdm(scene_files[:limit]):
+    for scene_file in (progress := tqdm(scene_files[:limit])):
         scene_name = extract_file_name_from_file_desc(scene_file)
-        scene_ds = xr.open_dataset(input_dir / f'{scene_name}.nc')
+        progress.set_description(f'Training scene {scene_name}')
+        scene_ds = xr.open_dataset(input_train_dir / f'{scene_name}.nc')
         x = extract_sample_x(scene_ds, options['sar_variables'], options['amsrenv_variables'])
         y = extract_sample_y(scene_ds, options['charts'])
         x_patches = split_to_patches(x, options['patch_size'], options['train_fill_value'])
@@ -210,17 +222,29 @@ def main(*, limit: int = None):
         save_y_chart_patches_for_nnunet(y_patches, output_dir_labels_paths, scene_name, options['spacing'])
     print('Generated NIfTI files for train samples')
 
+    # Prepare test scenes
+    with open(datalists_test_path) as f:
+        scene_file = json.loads(f.read())
+
+    for scene_file in (progress := tqdm(scene_file[:limit])):
+        scene_name = extract_file_name_from_file_desc(scene_file)
+        progress.set_description(f'Test scene {scene_name}')
+        scene_ds = xr.open_dataset(input_test_dir / f'{scene_name}.nc')
+        x = extract_sample_x(scene_ds, options['sar_variables'], options['amsrenv_variables'])
+        save_x_for_nnunet(x, output_dir_test_path, scene_name, options['spacing'])
+
+    # Prepare metadata
     if 'SIC' in options['charts']:
         generate_nnunet_ds_metadata(
-            output_dir / 'dataset_SIC.json', output_dir_train_path, None, SCENE_VARIABLES, SIC_GROUPS
+            output_dir / 'dataset_SIC.json', output_dir_train_path, output_dir_test_path, SCENE_VARIABLES, SIC_GROUPS
         )
     if 'SOD' in options['charts']:
         generate_nnunet_ds_metadata(
-            output_dir / 'dataset_SOD.json', output_dir_train_path, None, SCENE_VARIABLES, SOD_GROUPS
+            output_dir / 'dataset_SOD.json', output_dir_train_path, output_dir_test_path, SCENE_VARIABLES, SOD_GROUPS
         )
     if 'FLOE' in options['charts']:
         generate_nnunet_ds_metadata(
-            output_dir / 'dataset_FLOE.json', output_dir_train_path, None, SCENE_VARIABLES, FLOE_GROUPS
+            output_dir / 'dataset_FLOE.json', output_dir_train_path, output_dir_test_path, SCENE_VARIABLES, FLOE_GROUPS
         )
     print('Generated metadata JSON files for given datatsets')
 
