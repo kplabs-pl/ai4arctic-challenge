@@ -13,7 +13,7 @@ TRAIN_OPTIONS = {
     'loader_upsampling': 'nearest',  # How to upscale low resolution variables to high resolution.
     # -- Data prepraration lookups and metrics.
     'train_variables': SCENE_VARIABLES,  # Contains the relevant variables in the scenes.
-    'charts': ['FLOE'],  # Charts to train on.
+    'charts': CHARTS,  # Charts to train on.
     'n_classes': {  # number of total classes in the reference charts, including the mask.
         'SIC': SIC_LOOKUP['n_classes'],
         'SOD': SOD_LOOKUP['n_classes'],
@@ -41,7 +41,7 @@ TRAIN_OPTIONS = {
             'weight': 1,
         },
     },
-    'num_val_scenes': 10,  # Number of scenes randomly sampled from train_list to use in validation.
+    'num_val_scenes': 75,  # Number of scenes randomly sampled from train_list to use in validation.
     # -- GPU/cuda options -- #
     'gpu_id': 0,  # Index of GPU. In case of multiple GPUs.
     'num_workers': 4,  # Number of parallel processes to fetch data.

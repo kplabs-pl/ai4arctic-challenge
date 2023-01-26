@@ -107,35 +107,26 @@ def prepare_train_options_for_logging(train_options: dict) -> dict:
     return ret
 
 
-def main(run_name: str, *, remote_mlflow: bool = False, force_cpu_device: bool = False, short_training: bool = False):
-    """Train ice detection network.
-
-    :param run_name: Name of the experiment run (will be used for logging, artifacts, etc.)
-    :param remote_mlflow: Enable remote mlflow logging
-    :param force_cpu_device: Use CPU device (default behaviour is autodetect GPU/MPS/fallback to CPU)
-    :param short_training: Overwrite settings for a smaller num of epochs (useful for sanity runs)
-    """
-    train_options = setup_options(TRAIN_OPTIONS, short_training=short_training)
-    print('Options initialised')
-
-    device = setup_device(train_options) if not force_cpu_device else torch.device('cpu')
-    print('Device initialised')
-
-    dataloader, dataloader_val = setup_dataset(train_options)
-    print('Data setup complete')
-
-    # Setup U-Net model, adam optimizer, loss function and dataloader.
-    net, model_options = setup_model(train_options)
-    net = net.to(device)
-    optimizer = torch.optim.Adam(list(net.parameters()), lr=train_options['lr'])
-    torch.backends.cudnn.benchmark = (
-        True  # Selects the kernel with the best performance for the GPU and given input size.
-    )
-    print('Model setup complete')
+def train(
+    run_name: str,
+    train_options: dict,
+    model_options: dict,
+    dataloader: torch.utils.data.DataLoader,
+    datalader_val: torch.utils.data.DataLoader,
+    model: torch.nn.Module,
+    device: torch.device,
+    remote_mlflow: bool = False,
+):
+    model = model.to(device)
 
     # Loss functions to use for each sea ice parameter.
     # The ignore_index argument discounts the masked values, ensuring that the model is not using these pixels to train
     # on. It is equivalent to multiplying the loss of the relevant masked pixel with 0.
+    optimizer = torch.optim.Adam(list(model.parameters()), lr=train_options['lr'])
+    torch.backends.cudnn.benchmark = (
+        True  # Selects the kernel with the best performance for the GPU and given input size.
+    )
+
     loss_functions = {
         chart: torch.nn.CrossEntropyLoss(ignore_index=train_options['class_fill_values'][chart])
         for chart in train_options['charts']
@@ -157,7 +148,7 @@ def main(run_name: str, *, remote_mlflow: bool = False, force_cpu_device: bool =
         for epoch in tqdm(range(train_options['epochs']), position=0, desc='Epoch'):
             gc.collect()  # Collect garbage to free memory.
             loss_sum = torch.tensor([0.0])  # To sum the batch losses during the epoch.
-            net.train()  # Set network to evaluation mode.
+            model.train()  # Set network to evaluation mode.
 
             # Loops though batches in queue.
             for i, (batch_x, batch_y) in enumerate(
@@ -176,7 +167,7 @@ def main(run_name: str, *, remote_mlflow: bool = False, force_cpu_device: bool =
                 # - Mixed precision training. (Saving memory)
                 with torch.cuda.amp.autocast(enabled=True if device == 'cuda' else False):
                     # - Forward pass.
-                    output = net(batch_x)
+                    output = model(batch_x)
 
                     # - Calculate loss.
                     for chart in train_options['charts']:
@@ -214,10 +205,10 @@ def main(run_name: str, *, remote_mlflow: bool = False, force_cpu_device: bool =
             outputs_flat = {chart: np.array([]) for chart in train_options['charts']}
             inf_ys_flat = {chart: np.array([]) for chart in train_options['charts']}
 
-            net.eval()  # Set network to evaluation mode.
+            model.eval()  # Set network to evaluation mode.
             # - Loops though scenes in queue.
             for inf_x, inf_y, masks, name in tqdm(
-                iterable=dataloader_val,
+                iterable=datalader_val,
                 total=len(train_options['validate_list']),
                 colour='green',
                 position=0,
@@ -228,7 +219,7 @@ def main(run_name: str, *, remote_mlflow: bool = False, force_cpu_device: bool =
                 # - Ensures that no gradients are calculated, which otherwise take up a lot of space on the GPU.
                 with torch.no_grad(), torch.cuda.amp.autocast(enabled=True if device == 'cuda' else False):
                     inf_x = inf_x.to(device, non_blocking=True)
-                    output = net(inf_x)
+                    output = model(inf_x)
 
                 # - Final output layer, and storing of non masked pixels.
                 for chart in train_options['charts']:
@@ -259,7 +250,7 @@ def main(run_name: str, *, remote_mlflow: bool = False, force_cpu_device: bool =
                 best_model_val_epoch = epoch
                 torch.save(
                     {
-                        'model_state_dict': net.state_dict(),
+                        'model_state_dict': model.state_dict(),
                         'optimizer_state_dict': optimizer.state_dict(),
                         'epoch': epoch,
                     },
@@ -268,6 +259,30 @@ def main(run_name: str, *, remote_mlflow: bool = False, force_cpu_device: bool =
             del inf_ys_flat, outputs_flat  # Free memory.
         mlflow.log_metric('best_model_val_epoch', best_model_val_epoch)
         mlflow.log_artifact(best_model_artifact_path)
+
+
+def main(run_name: str, *, remote_mlflow: bool = False, force_cpu_device: bool = False, short_training: bool = False):
+    """Train ice detection network.
+
+    :param run_name: Name of the experiment run (will be used for logging, artifacts, etc.)
+    :param remote_mlflow: Enable remote mlflow logging
+    :param force_cpu_device: Use CPU device (default behaviour is autodetect GPU/MPS/fallback to CPU)
+    :param short_training: Overwrite settings for a smaller num of epochs (useful for sanity runs)
+    """
+    train_options = setup_options(TRAIN_OPTIONS, short_training=short_training)
+    print('Options initialised')
+
+    device = setup_device(train_options) if not force_cpu_device else torch.device('cpu')
+    print('Device initialised')
+
+    dataloader, dataloader_val = setup_dataset(train_options)
+    print('Data setup complete')
+
+    model, model_options = setup_model(train_options)
+    print('Model setup complete')
+    train(
+        run_name, train_options, model_options, dataloader, dataloader_val, model, device, remote_mlflow=remote_mlflow
+    ),
 
 
 if __name__ == '__main__':
