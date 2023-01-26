@@ -41,7 +41,7 @@ TRAIN_OPTIONS = {
             'weight': 1,
         },
     },
-    'num_val_scenes': 50,  # Number of scenes randomly sampled from train_list to use in validation.
+    'num_val_scenes': 16,  # Number of scenes randomly sampled from train_list to use in validation.
     # -- GPU/cuda options -- #
     'gpu_id': 0,  # Index of GPU. In case of multiple GPUs.
     'num_workers': 4,  # Number of parallel processes to fetch data.
