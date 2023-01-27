@@ -34,7 +34,7 @@ def baseline_grid():
         print(f'Running experiment: {run_name}')
         progress.set_description(run_name)
 
-        train_options = setup_options(TRAIN_OPTIONS)
+        train_options = setup_options(train_options)
         print('Options initialised')
 
         device = setup_device(train_options)
