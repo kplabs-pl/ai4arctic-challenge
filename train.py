@@ -102,8 +102,11 @@ def setup_model(train_options: dict) -> tuple[torch.nn.Module, dict]:
 
 
 def prepare_train_options_for_logging(train_options: dict) -> dict:
+    LOG_STR_LEN_LIMIT = 250
     ret = train_options.copy()
-    del ret['train_variables']
+    for k in train_options:
+        if len(str(ret[k])) > LOG_STR_LEN_LIMIT:
+            del ret[k]
     return ret
 
 
