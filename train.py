@@ -140,7 +140,7 @@ def train(
 
     mlflow.set_experiment(experiment_name=EXPERIMENT_NAME)
     with mlflow.start_run(run_name=run_name), TemporaryDirectory() as artifacts_tmp_dir:
-        mlflow.log_params(prepare_train_options_for_logging(TRAIN_OPTIONS) | model_options)
+        mlflow.log_params(prepare_train_options_for_logging(train_options) | model_options)
         best_model_val_epoch = 0
         best_model_artifact_path = os.path.join(artifacts_tmp_dir, 'ice_best_model.pt')
 
