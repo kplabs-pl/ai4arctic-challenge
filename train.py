@@ -11,6 +11,7 @@ import mlflow
 import numpy as np
 import torch
 from tqdm import tqdm  # Progress bar
+from torchinfo import summary
 
 # --Proprietary modules -- #
 from functions import (  # Functions to calculate metrics and show the relevant chart colorbar.
@@ -121,6 +122,13 @@ def train(
     remote_mlflow: bool = False,
 ):
     model = model.to(device)
+    in_shape = (
+        train_options['batch_size'],
+        len(train_options['train_variables']),
+        train_options['patch_size'],
+        train_options['patch_size'],
+    )
+    summary(model, input_size=in_shape)
 
     # Loss functions to use for each sea ice parameter.
     # The ignore_index argument discounts the masked values, ensuring that the model is not using these pixels to train

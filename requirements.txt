@@ -9,5 +9,6 @@ numpy
 pysftp
 scikit-learn
 torch
+torchinfo
 tqdm
 xarray
