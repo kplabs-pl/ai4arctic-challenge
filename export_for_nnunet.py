@@ -3,7 +3,7 @@ import os
 import stat
 from math import ceil
 from pathlib import Path
-from typing import Callable, Mapping
+from typing import Any, Callable, Mapping
 from warnings import warn
 
 import clize
@@ -26,7 +26,8 @@ from utils import (
     SOD_LOOKUP,
 )
 
-EXPORT_OPTIONS = {
+
+EXPORT_OPTIONS: dict[str, Any] = {
     'patch_size': 256,  # Size of patches sampled. Used for both Width and Height (default 256).
     'charts': ['SIC', 'SOD', 'FLOE'],  # Charts to train on.
     'pixel_spacing': 80,  # SAR pixel spacing. 80 for the ready-to-train AI4Arctic Challenge dataset.
@@ -38,6 +39,11 @@ EXPORT_OPTIONS = {
         'FLOE': FLOE_LOOKUP['mask'],
     },
     'spacing': (999.0, 1.0, 1.0),
+    'class_values': {
+        'SIC': list(SIC_GROUPS.keys()),
+        'SOD': list(SOD_GROUPS.keys()),
+        'FLOE': list(FLOE_GROUPS.keys()),
+    },
 }
 
 
@@ -136,6 +142,34 @@ def save_x_for_nnunet(x_array: np.ndarray, output_dir_path: Path, name: str, spa
         save_for_nnunet(band, output_dir_path, name, spacing, band_num=b)
 
 
+def exceedes_thr_of_invalid_pixels(array: np.ndarray, invalid_value: float, thr: float) -> bool:
+    return np.sum(array == invalid_value) / array.size > thr
+
+
+def without_invalid_patches(
+    x_array_patches: np.ndarray,
+    y_array_patches: dict[str, np.ndarray],
+    invalid_values: dict[str, float | int],
+    thr: float,
+) -> tuple[np.ndarray, dict[str, np.ndarray]]:
+    num_patches = len(list(y_array_patches.values())[0])
+    assert all(len(y_array_patches[chart]) == num_patches for chart in y_array_patches)
+    assert len(x_array_patches) == num_patches
+    assert y_array_patches.keys() == invalid_values.keys()
+
+    patch_is_invalid = [
+        any(
+            exceedes_thr_of_invalid_pixels(y_array_patches[chart][i], invalid_values[chart], thr)
+            for chart in y_array_patches
+        )
+        for i in range(num_patches)
+    ]
+    np.delete(x_array_patches, patch_is_invalid, axis=0)
+    for chart in y_array_patches:
+        np.delete(y_array_patches[chart], patch_is_invalid, axis=0)
+    return x_array_patches, y_array_patches
+
+
 def save_x_patches_for_nnunet(x_array_patches: np.ndarray, output_dir_path: Path, scene_name: str, spacing: tuple):
     if x_array_patches.ndim != 4:
         raise ValueError(f'Expected array to have format PATCH x CHW but got {x_array_patches.shape}')
@@ -153,6 +187,13 @@ def save_y_chart_patches_for_nnunet(
             raise ValueError(f'Expected array to have format PATCH x CHW but got {y_array_patches[chart].shape}')
         warn_if_not_chw(y_array_patches[chart][0])
         for i, y_array in enumerate(y_array_patches[chart]):
+            assert y_array.shape[0] == 1
+
+            expected_label_values = EXPORT_OPTIONS['class_values'][chart] + [EXPORT_OPTIONS['class_fill_values'][chart]]
+            if not np.isin(y_array, expected_label_values).all():
+                raise ValueError(
+                    f'Expeced labels to be one of: {expected_label_values}, but they are: {np.unique(y_array)}'
+                )
             save_for_nnunet(y_array[0], output_dir_paths[chart], f'{scene_name}_P{i:04}', spacing)
 
 
@@ -218,6 +259,7 @@ def main(*, limit: int = None):
         y_patches = {
             chart: split_to_patches(y[chart], options['patch_size'], options['class_fill_values'][chart]) for chart in y
         }
+        x_patches, y_patches = without_invalid_patches(x_patches, y_patches, EXPORT_OPTIONS['class_fill_values'], 0.6)
         save_x_patches_for_nnunet(x_patches, output_dir_train_path, scene_name, options['spacing'])
         save_y_chart_patches_for_nnunet(y_patches, output_dir_labels_paths, scene_name, options['spacing'])
     print('Generated NIfTI files for train samples')
