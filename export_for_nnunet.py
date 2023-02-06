@@ -121,7 +121,7 @@ def save_for_nnunet(array: np.ndarray, output_dir: Path, output_name: str, spaci
             f'{array.shape}'
         )
     array = np.expand_dims(array, axis=0)
-    if band_num:
+    if band_num is not None:
         sitk_img = sitk.GetImageFromArray(array.astype(np.float32))
         sitk_img.SetSpacing(np.array(spacing)[::-1])
         sitk.WriteImage(sitk_img, str(output_dir / output_name) + f'_{band_num:04}.nii.gz')
