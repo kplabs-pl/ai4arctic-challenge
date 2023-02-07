@@ -3,7 +3,7 @@ import os
 import stat
 from math import ceil
 from pathlib import Path
-from typing import Any, Callable, Mapping
+from typing import Any, Callable
 from warnings import warn
 
 import clize
@@ -39,6 +39,11 @@ EXPORT_OPTIONS: dict[str, Any] = {
         'FLOE': FLOE_LOOKUP['mask'],
     },
     'spacing': (999.0, 1.0, 1.0),
+    'groups': {
+        'SIC': SIC_GROUPS,
+        'SOD': SOD_GROUPS,
+        'FLOE': FLOE_GROUPS,
+    },
     'class_values': {
         'SIC': list(SIC_GROUPS.keys()),
         'SOD': list(SOD_GROUPS.keys()),
@@ -142,6 +147,14 @@ def save_x_for_nnunet(x_array: np.ndarray, output_dir_path: Path, name: str, spa
         save_for_nnunet(band, output_dir_path, name, spacing, band_num=b)
 
 
+def save_x_patches_for_nnunet(x_array_patches: np.ndarray, output_dir_path: Path, scene_name: str, spacing: tuple):
+    if x_array_patches.ndim != 4:
+        raise ValueError(f'Expected array to have format PATCH x CHW but got {x_array_patches.shape}')
+    warn_if_not_chw(x_array_patches[0])
+    for i, x_array in enumerate(x_array_patches):
+        save_x_for_nnunet(x_array, output_dir_path, f'{scene_name}_P{i:04}', spacing)
+
+
 def exceedes_thr_of_invalid_pixels(array: np.ndarray, invalid_value: float, thr: float) -> bool:
     return np.sum(array == invalid_value) / array.size > thr
 
@@ -170,16 +183,24 @@ def without_invalid_patches(
     return x_array_patches, y_array_patches
 
 
-def save_x_patches_for_nnunet(x_array_patches: np.ndarray, output_dir_path: Path, scene_name: str, spacing: tuple):
-    if x_array_patches.ndim != 4:
-        raise ValueError(f'Expected array to have format PATCH x CHW but got {x_array_patches.shape}')
-    warn_if_not_chw(x_array_patches[0])
-    for i, x_array in enumerate(x_array_patches):
-        save_x_for_nnunet(x_array, output_dir_path, f'{scene_name}_P{i:04}', spacing)
+def labels_with_invalid_as_increment(
+    groups: dict[str, dict[int, str | int]]
+) -> tuple[dict[str, dict[int, str | int]], dict[str, int]]:
+    invalid_labels: dict[str, int] = {}
+    for chart in groups:
+        chart_groups = groups[chart]
+        incremented_label = max(chart_groups) + 1
+        chart_groups[incremented_label] = 'Invalid'
+        invalid_labels[chart] = incremented_label
+    return groups, invalid_labels
 
 
 def save_y_chart_patches_for_nnunet(
-    y_array_patches: dict[str, np.ndarray], output_dir_paths: dict[str, Path], scene_name: str, spacing: tuple
+    y_array_patches: dict[str, np.ndarray],
+    output_dir_paths: dict[str, Path],
+    scene_name: str,
+    spacing: tuple,
+    allowed_groups: dict[str, list[int]],
 ):
     charts = y_array_patches.keys() & output_dir_paths.keys()
     for chart in charts:
@@ -189,10 +210,9 @@ def save_y_chart_patches_for_nnunet(
         for i, y_array in enumerate(y_array_patches[chart]):
             assert y_array.shape[0] == 1
 
-            expected_label_values = EXPORT_OPTIONS['class_values'][chart] + [EXPORT_OPTIONS['class_fill_values'][chart]]
-            if not np.isin(y_array, expected_label_values).all():
+            if not np.isin(y_array, allowed_groups[chart]).all():
                 raise ValueError(
-                    f'Expeced labels to be one of: {expected_label_values}, but they are: {np.unique(y_array)}'
+                    f'Expeced labels to be one of: {allowed_groups[chart]}, but they are: {np.unique(y_array)}'
                 )
             save_for_nnunet(y_array[0], output_dir_paths[chart], f'{scene_name}_P{i:04}', spacing)
 
@@ -202,7 +222,7 @@ def generate_nnunet_ds_metadata(
     training_dir_path: Path,
     test_dir_path: Path | None,
     bands: list[str],
-    labels: Mapping[int, str | int],
+    labels: dict[int, str | int],
 ):
     generate_dataset_json(
         output_file=str(output_json_path),
@@ -224,6 +244,16 @@ def make_dataset_selection_script(output_dir: Path):
     with open(script_file_path, 'w') as f:
         f.write(DATASET_SELECTION_SCRIPT_BODY)
     os.chmod(script_file_path, os.stat(script_file_path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+
+
+def replace_values_in_charts(
+    y_array_patches: dict[str, np.ndarray], values_to_replace: dict[str, int], value_to_paste: dict[str, int]
+) -> dict[str, np.ndarray]:
+    for chart in y_array_patches:
+        y_array_patches[chart] = np.where(
+            y_array_patches[chart] == values_to_replace[chart], value_to_paste[chart], y_array_patches[chart]
+        )
+    return y_array_patches
 
 
 def main(*, limit: int = None):
@@ -249,6 +279,10 @@ def main(*, limit: int = None):
     with open(datalists_train_path) as f:
         scene_files = json.loads(f.read())
 
+    groups_with_increment_invalid, increment_invalid_labels = labels_with_invalid_as_increment(options['groups'])
+    allowed_groups = {
+        chart: list(groups_with_increment_invalid[chart].keys()) for chart in groups_with_increment_invalid
+    }
     for scene_file in (progress := tqdm(scene_files[:limit])):
         scene_name = extract_file_name_from_file_desc(scene_file)
         progress.set_description(f'Training scene {scene_name}')
@@ -259,9 +293,12 @@ def main(*, limit: int = None):
         y_patches = {
             chart: split_to_patches(y[chart], options['patch_size'], options['class_fill_values'][chart]) for chart in y
         }
-        x_patches, y_patches = without_invalid_patches(x_patches, y_patches, EXPORT_OPTIONS['class_fill_values'], 0.6)
+        x_patches, y_patches = without_invalid_patches(x_patches, y_patches, options['class_fill_values'], 0.6)
+        y_patches = replace_values_in_charts(y_patches, options['class_fill_values'], increment_invalid_labels)
         save_x_patches_for_nnunet(x_patches, output_dir_train_path, scene_name, options['spacing'])
-        save_y_chart_patches_for_nnunet(y_patches, output_dir_labels_paths, scene_name, options['spacing'])
+        save_y_chart_patches_for_nnunet(
+            y_patches, output_dir_labels_paths, scene_name, options['spacing'], allowed_groups
+        )
     print('Generated NIfTI files for train samples')
 
     # Prepare test scenes
@@ -275,18 +312,13 @@ def main(*, limit: int = None):
         x = extract_sample_x(scene_ds, options['sar_variables'], options['amsrenv_variables'])
         save_x_for_nnunet(x, output_dir_test_path, scene_name, options['spacing'])
 
-    # Prepare metadata
-    if 'SIC' in options['charts']:
+    for chart in options['charts']:
         generate_nnunet_ds_metadata(
-            output_dir / 'dataset_SIC.json', output_dir_train_path, output_dir_test_path, SCENE_VARIABLES, SIC_GROUPS
-        )
-    if 'SOD' in options['charts']:
-        generate_nnunet_ds_metadata(
-            output_dir / 'dataset_SOD.json', output_dir_train_path, output_dir_test_path, SCENE_VARIABLES, SOD_GROUPS
-        )
-    if 'FLOE' in options['charts']:
-        generate_nnunet_ds_metadata(
-            output_dir / 'dataset_FLOE.json', output_dir_train_path, output_dir_test_path, SCENE_VARIABLES, FLOE_GROUPS
+            output_dir / f'dataset_{chart}.json',
+            output_dir_train_path,
+            output_dir_test_path,
+            SCENE_VARIABLES,
+            groups_with_increment_invalid[chart],
         )
     print('Generated metadata JSON files for given datatsets')
 
