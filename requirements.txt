@@ -11,3 +11,6 @@ scikit-learn
 torch
 tqdm
 xarray
+simpleitk
+nnunet
+dvc[ssh]

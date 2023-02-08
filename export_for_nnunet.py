@@ -256,7 +256,7 @@ def replace_values_in_charts(
     return y_array_patches
 
 
-def main(*, limit: int = None):
+def main(*, limit: int = None, invalid_thr: float = 0.6):
     input_train_dir = Path('./data/ai4arctic_challenge')
     input_test_dir = Path('./data/ai4arctic_challenge_test')
     output_dir = Path('./exports/nnunet_ds')
@@ -293,7 +293,7 @@ def main(*, limit: int = None):
         y_patches = {
             chart: split_to_patches(y[chart], options['patch_size'], options['class_fill_values'][chart]) for chart in y
         }
-        x_patches, y_patches = without_invalid_patches(x_patches, y_patches, options['class_fill_values'], 0.6)
+        x_patches, y_patches = without_invalid_patches(x_patches, y_patches, options['class_fill_values'], invalid_thr)
         y_patches = replace_values_in_charts(y_patches, options['class_fill_values'], increment_invalid_labels)
         save_x_patches_for_nnunet(x_patches, output_dir_train_path, scene_name, options['spacing'])
         save_y_chart_patches_for_nnunet(
