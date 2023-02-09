@@ -28,7 +28,7 @@ from utils import (
 
 
 EXPORT_OPTIONS: dict[str, Any] = {
-    'patch_size': 256,  # Size of patches sampled. Used for both Width and Height (default 256).
+    'patch_size': 2500,  # Size of patches sampled. Used for both Width and Height (default 256).
     'charts': ['SIC', 'SOD', 'FLOE'],  # Charts to train on.
     'pixel_spacing': 80,  # SAR pixel spacing. 80 for the ready-to-train AI4Arctic Challenge dataset.
     'train_variables': SCENE_VARIABLES,  # Contains the relevant variables in the scenes.
