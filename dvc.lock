@@ -1,0 +1,33 @@
+schema: '2.0'
+stages:
+  export_for_nnunet:
+    cmd: python -m export_for_nnunet
+    deps:
+    - path: data/ai4arctic_challenge
+      md5: e662b0371c0c5aca1cd413df2da64354.dir
+      size: 60395021918
+      nfiles: 514
+    - path: data/ai4arctic_challenge_test
+      md5: 3ff2c619852686e63a6bfd59f57fa6f0.dir
+      size: 2526231394
+      nfiles: 21
+    - path: datalists/dataset.json
+      md5: c0154125bdab2ba078daa93030c0de80
+      size: 58958
+    - path: datalists/testset.json
+      md5: 7d105b23f7853352ee5c6fcde0805005
+      size: 2315
+    - path: export_for_nnunet.py
+      md5: e1a56ff0a21324bc7b6fc8fd2591436f
+      size: 12960
+    - path: loaders.py
+      md5: b3c90fdba6259a235ec09dc2c788c1d2
+      size: 11244
+    - path: utils.py
+      md5: 531d60ba30ef55b88208c9a79d1e5b7b
+      size: 4871
+    outs:
+    - path: exports/nnunet_ds
+      md5: fe4be076856374a7e9e070b29412ae7f.dir
+      size: 109175776190
+      nfiles: 94444

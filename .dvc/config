@@ -1,0 +1,6 @@
+[core]
+    remote = earth_sftp
+['remote "earth_sftp"']
+    url = ssh://ftp_ml@earth.kplabs.pl:/pub/Teams/ML/.dvc_data_registry
+    password = EGv7d3
+    allow_agent = false
