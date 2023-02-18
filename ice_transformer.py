@@ -68,12 +68,17 @@ class SpectralSpatialCrossTransformer(torch.nn.Module):
         self.channels = channels
         self.spatial_size = spatial_size
 
+        self.down_conv_1 = torch.nn.Conv2d(channels, channels, (8, 8), stride=(8, 8), padding='valid')
+        self.up_1 = torch.nn.Upsample(scale_factor=8)
+        self.down_conv_2 = torch.nn.Conv2d(channels, channels, (8, 8), stride=(8, 8), padding='valid')
+        self.up_2 = torch.nn.Upsample(scale_factor=8)
+
         # Spectral, spatial self attention
         self.as_ch = torch.nn.MultiheadAttention(channels, num_heads)
-        self.as_sp = torch.nn.MultiheadAttention(spatial_size**2, num_heads)
+        self.as_sp = torch.nn.MultiheadAttention(64, num_heads)
         # Spectral-spatial, spatial-spectral cross attention
         self.ac_ch = torch.nn.MultiheadAttention(channels, num_heads)
-        self.ac_sp = torch.nn.MultiheadAttention(spatial_size**2, num_heads)
+        self.ac_sp = torch.nn.MultiheadAttention(64, num_heads)
 
         self.final_conv = torch.nn.Conv2d(channels * 2, channels, (3, 3), padding=(1, 1))
 
@@ -85,20 +90,31 @@ class SpectralSpatialCrossTransformer(torch.nn.Module):
         if c != self.channels:
             raise ValueError()
 
-        t_flat = x.reshape(b, c, h * w)
-        t_ch = t_flat.moveaxis(1, 2)
-        t_sp = t_flat
+        t_ch = rearrange(x, 'b c h w -> b (h w) c')
+
+        t_sp = self.down_conv_1(x)
+        t_sp = rearrange(t_sp, 'b c h w -> b c (h w)')
 
         os_ch = self.as_ch(t_ch, t_ch, t_ch)[0]
         os_sp = self.as_sp(t_sp, t_sp, t_sp)[0]
 
-        oc_ch = self.ac_ch(os_sp.moveaxis(1, 2), os_ch, os_ch)[0]
-        oc_sp = self.ac_sp(os_ch.moveaxis(1, 2), os_sp, os_sp)[0]
+        os_sp_up = rearrange(os_sp, 'b c (h w) -> b c h w', h=8, w=8)
+        os_sp_up = self.up_1(os_sp_up)
+        os_sp_up = rearrange(os_sp_up, 'b c h w -> b (h w) c', h=self.spatial_size, w=self.spatial_size)
 
-        oc_ch_unflat = oc_ch.moveaxis(1, 2).reshape(x.shape)
-        oc_sp_unflat = oc_sp.reshape(x.shape)
+        os_ch_down = rearrange(os_ch, 'b (h w) c -> b c h w', h=self.spatial_size, w=self.spatial_size)
+        os_ch_down = self.down_conv_2(os_ch_down)
+        os_ch_down = rearrange(os_ch_down, 'b c h w -> b c (h w)', h=8, w=8)
 
-        concated = torch.concat([oc_ch_unflat, oc_sp_unflat], axis=1)
+        oc_ch = self.ac_ch(os_sp_up, os_ch, os_ch)[0]
+        oc_sp = self.ac_sp(os_ch_down, os_sp, os_sp)[0]
+
+        oc_sp = rearrange(oc_sp, 'b c (h w) -> b c h w', h=8, w=8)
+        oc_sp = self.up_2(oc_sp)
+
+        oc_ch = rearrange(oc_ch, 'b (h w) c -> b c h w', h=self.spatial_size, w=self.spatial_size)
+
+        concated = torch.concat([oc_sp, oc_ch], axis=1)
         out = self.final_conv(concated)
         return out
 
