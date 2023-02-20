@@ -128,15 +128,20 @@ class IceTransformer(torch.nn.Module):
 
         self.spc_spt_tf = SpectralSpatialCrossTransformer(channels, patch_size, 4)
 
-        self.final_conv = torch.nn.Conv2d(self.channels, 32, (3, 3), padding=(1, 1))
-        self.output_conv_sic = torch.nn.Conv2d(32, 12, kernel_size=(1, 1), stride=(1, 1))
-        self.output_conv_sod = torch.nn.Conv2d(32, 7, kernel_size=(1, 1), stride=(1, 1))
-        self.output_conv_floe = torch.nn.Conv2d(32, 8, kernel_size=(1, 1), stride=(1, 1))
+        self.final_conv_sic = torch.nn.Conv2d(self.channels, 24, (3, 3), padding=(1, 1))
+        self.final_conv_sod = torch.nn.Conv2d(self.channels, 24, (3, 3), padding=(1, 1))
+        self.final_conv_floe = torch.nn.Conv2d(self.channels, 24, (3, 3), padding=(1, 1))
+        self.output_conv_sic = torch.nn.Conv2d(24, 12, kernel_size=(1, 1), stride=(1, 1))
+        self.output_conv_sod = torch.nn.Conv2d(24, 7, kernel_size=(1, 1), stride=(1, 1))
+        self.output_conv_floe = torch.nn.Conv2d(24, 8, kernel_size=(1, 1), stride=(1, 1))
 
     def forward(self, x):
         raise_if_not_batched_3d_tensor(x)
         b, c, h, w = x.shape
 
         x = process_in_patches(x, self.patch_size, lambda p: self.spc_spt_tf(p))
-        x = self.final_conv(x)
-        return {'SIC': self.output_conv_sic(x), 'SOD': self.output_conv_sod(x), 'FLOE': self.output_conv_floe(x)}
+        return {
+            'SIC': self.output_conv_sic(self.final_conv_sic(x)),
+            'SOD': self.output_conv_sod(self.final_conv_sod(x)),
+            'FLOE': self.output_conv_floe(self.final_conv_floe(x))
+        }
