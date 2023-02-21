@@ -8,7 +8,7 @@ TRAIN_OPTIONS = {
     'lr': 0.0001,  # Optimizer learning rate.
     'epochs': 75,  # Number of epochs before training stop (default 50).
     'epoch_len': 500,  # Number of batches for each epoch (default 500).
-    'patch_size': 256,  # Size of patches sampled. Used for both Width and Height (default 256).
+    'patch_size': 64,  # Size of patches sampled. Used for both Width and Height (default 256).
     'batch_size': 8,  # Number of patches for each batch.
     'loader_upsampling': 'nearest',  # How to upscale low resolution variables to high resolution.
     # -- Data prepraration lookups and metrics.
@@ -41,7 +41,7 @@ TRAIN_OPTIONS = {
             'weight': 1,
         },
     },
-    'num_val_scenes': 16,  # Number of scenes randomly sampled from train_list to use in validation.
+    'num_val_scenes': 10,  # Number of scenes randomly sampled from train_list to use in validation.
     # -- GPU/cuda options -- #
     'gpu_id': 0,  # Index of GPU. In case of multiple GPUs.
     'num_workers': 4,  # Number of parallel processes to fetch data.
@@ -60,5 +60,5 @@ UNET_MODEL_OPTIONS = {
 }
 
 TRANSFORMER_MODEL_OPTIONS = {
-    'internal_patch_size': 64,
+    'internal_patch_size': 32,
 }

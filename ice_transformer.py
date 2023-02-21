@@ -2,6 +2,7 @@ from typing import Callable
 
 import torch
 from einops import rearrange
+from tqdm import tqdm
 
 
 def raise_if_not_batched_2d_tensor(tensor: torch.Tensor):
@@ -50,14 +51,17 @@ def merge_patches(
 
 
 def process_in_patches(
-    tensor: torch.Tensor, patch_size: int, transform: Callable[[torch.Tensor], torch.Tensor]
+        tensor: torch.Tensor, patch_size: int, transform: Callable[[torch.Tensor], torch.Tensor], progress: bool = False
 ) -> torch.Tensor:
     raise_if_not_batched_3d_tensor(tensor)
     b, c, h, w = tensor.shape
     patches, patches_rows, patches_cols = split_to_patches(tensor, patch_size)
     assert len(patches.shape) == 5, f'{patches.shape=}'
-    patches = torch.stack([transform(p) for p in patches])
-    merged = merge_patches(patches, (h, w), patches_rows, patches_cols)
+
+    outs = []
+    for p in tqdm(patches, disable=not progress):
+        outs.append(transform(p))
+    merged = merge_patches(torch.stack(outs), (h, w), patches_rows, patches_cols)
     return merged
 
 
@@ -68,17 +72,17 @@ class SpectralSpatialCrossTransformer(torch.nn.Module):
         self.channels = channels
         self.spatial_size = spatial_size
 
-        self.down_conv_1 = torch.nn.Conv2d(channels, channels, (8, 8), stride=(8, 8), padding='valid')
-        self.up_1 = torch.nn.Upsample(scale_factor=8)
-        self.down_conv_2 = torch.nn.Conv2d(channels, channels, (8, 8), stride=(8, 8), padding='valid')
-        self.up_2 = torch.nn.Upsample(scale_factor=8)
+        self.down_conv_1 = torch.nn.Conv2d(channels, channels, (4, 4), stride=(4, 4), padding='valid')
+        self.up_1 = torch.nn.Upsample(scale_factor=4)
+        self.down_conv_2 = torch.nn.Conv2d(channels, channels, (4, 4), stride=(4, 4), padding='valid')
+        self.up_2 = torch.nn.Upsample(scale_factor=4)
 
         # Spectral, spatial self attention
-        self.as_ch = torch.nn.MultiheadAttention(channels, num_heads)
-        self.as_sp = torch.nn.MultiheadAttention(64, num_heads)
+        self.as_ch = torch.nn.MultiheadAttention(channels, num_heads, batch_first=True)
+        self.as_sp = torch.nn.MultiheadAttention(64, num_heads, batch_first=True)
         # Spectral-spatial, spatial-spectral cross attention
-        self.ac_ch = torch.nn.MultiheadAttention(channels, num_heads)
-        self.ac_sp = torch.nn.MultiheadAttention(64, num_heads)
+        self.ac_ch = torch.nn.MultiheadAttention(channels, num_heads, batch_first=True)
+        self.ac_sp = torch.nn.MultiheadAttention(64, num_heads, batch_first=True)
 
         self.final_conv = torch.nn.Conv2d(channels * 2, channels, (3, 3), padding=(1, 1))
 
@@ -126,28 +130,21 @@ class IceTransformer(torch.nn.Module):
         self.channels = channels
         self.patch_size = patch_size
 
-        self.spc_spt_tf_1 = SpectralSpatialCrossTransformer(channels, patch_size, 4)
-        self.spc_spt_tf_2 = SpectralSpatialCrossTransformer(channels, patch_size, 4)
-        self.spc_spt_tf_3 = SpectralSpatialCrossTransformer(channels, patch_size, 4)
+        self.spc_spt_tf = SpectralSpatialCrossTransformer(channels, patch_size, 4)
 
-        self.final_conv_sic = torch.nn.Conv2d(self.channels, 24, (3, 3), padding=(1, 1))
-        self.final_conv_sod = torch.nn.Conv2d(self.channels, 24, (3, 3), padding=(1, 1))
-        self.final_conv_floe = torch.nn.Conv2d(self.channels, 24, (3, 3), padding=(1, 1))
+        self.final_conv = torch.nn.Conv2d(self.channels, 24, kernel_size=(1, 1), stride=(1, 1))
         self.output_conv_sic = torch.nn.Conv2d(24, 12, kernel_size=(1, 1), stride=(1, 1))
         self.output_conv_sod = torch.nn.Conv2d(24, 7, kernel_size=(1, 1), stride=(1, 1))
         self.output_conv_floe = torch.nn.Conv2d(24, 8, kernel_size=(1, 1), stride=(1, 1))
 
-    def forward(self, x):
+    def forward(self, x, patch_progress: bool = True):
         raise_if_not_batched_3d_tensor(x)
         b, c, h, w = x.shape
 
-        x = process_in_patches(
-            x,
-            self.patch_size,
-            lambda p: self.spc_spt_tf_3(self.spc_spt_tf_2(self.spc_spt_tf_1(p))))
-
+        x = process_in_patches(x, self.patch_size, lambda p: self.spc_spt_tf(p), progress=patch_progress)
+        x = self.final_conv(x)
         return {
-            'SIC': self.output_conv_sic(self.final_conv_sic(x)),
-            'SOD': self.output_conv_sod(self.final_conv_sod(x)),
-            'FLOE': self.output_conv_floe(self.final_conv_floe(x))
+            'SIC': self.output_conv_sic(x),
+            'SOD': self.output_conv_sod(x),
+            'FLOE': self.output_conv_floe(x)
         }
