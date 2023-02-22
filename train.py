@@ -98,7 +98,11 @@ def setup_model(train_options: dict) -> tuple[torch.nn.Module, dict]:
             model = UNet(options=train_options | model_options)
         case 'ice_transformer':
             model_options = TRANSFORMER_MODEL_OPTIONS.copy()
-            model = IceTransformer(len(train_options['train_variables']), model_options['internal_patch_size'])
+            model = IceTransformer(
+                len(train_options['train_variables']),
+                model_options['internal_patch_size'],
+                model_options['channel_embed_size'],
+            )
     return model, model_options
 
 

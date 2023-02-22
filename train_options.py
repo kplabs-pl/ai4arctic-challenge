@@ -61,4 +61,5 @@ UNET_MODEL_OPTIONS = {
 
 TRANSFORMER_MODEL_OPTIONS = {
     'internal_patch_size': 32,
+    'channel_embed_size': 64
 }
