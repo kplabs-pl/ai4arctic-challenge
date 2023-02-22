@@ -141,6 +141,7 @@ def main(
     print(f'Saved to {nc_file_path}')
 
     dump_meta(output_dir, model_url)
+    print('Submission creation succeeded')
 
 
 if __name__ == '__main__':
