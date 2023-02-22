@@ -1,0 +1,13 @@
+stages:
+  export_for_nnunet:
+    cmd: python -m export_for_nnunet
+    deps:
+      - export_for_nnunet.py
+      - loaders.py
+      - utils.py
+      - data/ai4arctic_challenge
+      - data/ai4arctic_challenge_test
+      - datalists/dataset.json
+      - datalists/testset.json
+    outs:
+      - exports/nnunet_ds
