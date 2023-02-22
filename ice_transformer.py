@@ -1,7 +1,9 @@
+from math import sqrt
 from typing import Callable
 
 import torch
 from einops import rearrange
+from tqdm import tqdm
 
 
 def raise_if_not_batched_2d_tensor(tensor: torch.Tensor):
@@ -50,30 +52,50 @@ def merge_patches(
 
 
 def process_in_patches(
-    tensor: torch.Tensor, patch_size: int, transform: Callable[[torch.Tensor], torch.Tensor]
+        tensor: torch.Tensor, patch_size: int, transform: Callable[[torch.Tensor], torch.Tensor], progress: bool = False
 ) -> torch.Tensor:
     raise_if_not_batched_3d_tensor(tensor)
     b, c, h, w = tensor.shape
     patches, patches_rows, patches_cols = split_to_patches(tensor, patch_size)
     assert len(patches.shape) == 5, f'{patches.shape=}'
-    patches = torch.stack([transform(p) for p in patches])
-    merged = merge_patches(patches, (h, w), patches_rows, patches_cols)
+
+    outs = []
+    for p in tqdm(patches, disable=not progress):
+        outs.append(transform(p))
+    merged = merge_patches(torch.stack(outs), (h, w), patches_rows, patches_cols)
     return merged
 
 
 class SpectralSpatialCrossTransformer(torch.nn.Module):
-    def __init__(self, channels: int, spatial_size: int, num_heads: int):
+    def __init__(self, channels: int, spatial_size: int, num_heads: int, channel_embed_size: int):
         super().__init__()
 
         self.channels = channels
         self.spatial_size = spatial_size
 
-        # Spectral, spatial self attention
-        self.as_ch = torch.nn.MultiheadAttention(channels, num_heads)
-        self.as_sp = torch.nn.MultiheadAttention(spatial_size**2, num_heads)
-        # Spectral-spatial, spatial-spectral cross attention
-        self.ac_ch = torch.nn.MultiheadAttention(channels, num_heads)
-        self.ac_sp = torch.nn.MultiheadAttention(spatial_size**2, num_heads)
+        assert sqrt(channel_embed_size).is_integer()
+        channel_embed_hw = int(sqrt(channel_embed_size))
+        assert (spatial_size / channel_embed_hw).is_integer()
+        ch_scale = int(spatial_size / channel_embed_hw)
+
+        self.channel_embed_hw = channel_embed_hw
+        self.ch_scale = ch_scale
+
+        self.down_conv_in_self_attn_channel = torch.nn.Conv2d(
+            channels, channels, (ch_scale, ch_scale), stride=(ch_scale, ch_scale), padding='valid')
+        self.up_out_self_attn_channel = torch.nn.Upsample(scale_factor=ch_scale)
+
+        # Spatial and channel self attention
+        self.self_attn_spatial = torch.nn.MultiheadAttention(channels, num_heads, batch_first=True)
+        self.self_attn_channel = torch.nn.MultiheadAttention(channel_embed_size, num_heads, batch_first=True)
+
+        self.down_conv_in_cross_attn_channel = torch.nn.Conv2d(
+            channels, channels, (ch_scale, ch_scale), stride=(ch_scale, ch_scale), padding='valid')
+        self.up_out_cross_attn_channel = torch.nn.Upsample(scale_factor=ch_scale)
+
+        # Spatial-channel and channel-spatial cross attention
+        self.cross_attn_spatial = torch.nn.MultiheadAttention(channels, num_heads, batch_first=True)
+        self.cross_attn_channel = torch.nn.MultiheadAttention(channel_embed_size, num_heads, batch_first=True)
 
         self.final_conv = torch.nn.Conv2d(channels * 2, channels, (3, 3), padding=(1, 1))
 
@@ -85,42 +107,57 @@ class SpectralSpatialCrossTransformer(torch.nn.Module):
         if c != self.channels:
             raise ValueError()
 
-        t_flat = x.reshape(b, c, h * w)
-        t_ch = t_flat.moveaxis(1, 2)
-        t_sp = t_flat
+        t_sp = rearrange(x, 'b c h w -> b (h w) c')
 
-        os_ch = self.as_ch(t_ch, t_ch, t_ch)[0]
-        os_sp = self.as_sp(t_sp, t_sp, t_sp)[0]
+        t_ch = self.down_conv_in_self_attn_channel(x)
+        t_ch = rearrange(t_ch, 'b c h w -> b c (h w)')
 
-        oc_ch = self.ac_ch(os_sp.moveaxis(1, 2), os_ch, os_ch)[0]
-        oc_sp = self.ac_sp(os_ch.moveaxis(1, 2), os_sp, os_sp)[0]
+        os_sp = self.self_attn_spatial(t_sp, t_sp, t_sp)[0]
+        os_ch = self.self_attn_channel(t_ch, t_ch, t_ch)[0]
 
-        oc_ch_unflat = oc_ch.moveaxis(1, 2).reshape(x.shape)
-        oc_sp_unflat = oc_sp.reshape(x.shape)
+        os_ch_up = rearrange(os_ch, 'b c (h w) -> b c h w', h=self.channel_embed_hw, w=self.channel_embed_hw)
+        os_ch_up = self.up_out_self_attn_channel(os_ch_up)
+        os_ch_up = rearrange(os_ch_up, 'b c h w -> b (h w) c', h=self.spatial_size, w=self.spatial_size)
 
-        concated = torch.concat([oc_ch_unflat, oc_sp_unflat], axis=1)
+        os_sp_down = rearrange(os_sp, 'b (h w) c -> b c h w', h=self.spatial_size, w=self.spatial_size)
+        os_sp_down = self.down_conv_in_cross_attn_channel(os_sp_down)
+        os_sp_down = rearrange(os_sp_down, 'b c h w -> b c (h w)', h=self.channel_embed_hw, w=self.channel_embed_hw)
+
+        oc_sp = self.cross_attn_spatial(os_ch_up, os_sp, os_sp)[0]
+        oc_ch = self.cross_attn_channel(os_sp_down, os_ch, os_ch)[0]
+
+        oc_ch = rearrange(oc_ch, 'b c (h w) -> b c h w', h=self.channel_embed_hw, w=self.channel_embed_hw)
+        oc_ch = self.up_out_cross_attn_channel(oc_ch)
+
+        oc_sp = rearrange(oc_sp, 'b (h w) c -> b c h w', h=self.spatial_size, w=self.spatial_size)
+
+        concated = torch.concat([oc_sp, oc_ch], axis=1)
         out = self.final_conv(concated)
         return out
 
 
 class IceTransformer(torch.nn.Module):
-    def __init__(self, channels: int, patch_size: int):
+    def __init__(self, channels: int, patch_size: int, channel_embed_size: int):
         super().__init__()
 
         self.channels = channels
         self.patch_size = patch_size
 
-        self.spc_spt_tf = SpectralSpatialCrossTransformer(channels, patch_size, 4)
+        self.spc_spt_tf = SpectralSpatialCrossTransformer(channels, patch_size, 4, channel_embed_size)
 
-        self.final_conv = torch.nn.Conv2d(self.channels, 32, (3, 3), padding=(1, 1))
-        self.output_conv_sic = torch.nn.Conv2d(32, 12, kernel_size=(1, 1), stride=(1, 1))
-        self.output_conv_sod = torch.nn.Conv2d(32, 7, kernel_size=(1, 1), stride=(1, 1))
-        self.output_conv_floe = torch.nn.Conv2d(32, 8, kernel_size=(1, 1), stride=(1, 1))
+        self.final_conv = torch.nn.Conv2d(self.channels, self.channels, kernel_size=(1, 1), stride=(1, 1))
+        self.output_conv_sic = torch.nn.Conv2d(self.channels, 12, kernel_size=(1, 1), stride=(1, 1))
+        self.output_conv_sod = torch.nn.Conv2d(self.channels, 7, kernel_size=(1, 1), stride=(1, 1))
+        self.output_conv_floe = torch.nn.Conv2d(self.channels, 8, kernel_size=(1, 1), stride=(1, 1))
 
-    def forward(self, x):
+    def forward(self, x, patch_progress: bool = False):
         raise_if_not_batched_3d_tensor(x)
         b, c, h, w = x.shape
 
-        x = process_in_patches(x, self.patch_size, lambda p: self.spc_spt_tf(p))
+        x = process_in_patches(x, self.patch_size, lambda p: self.spc_spt_tf(p), progress=patch_progress)
         x = self.final_conv(x)
-        return {'SIC': self.output_conv_sic(x), 'SOD': self.output_conv_sod(x), 'FLOE': self.output_conv_floe(x)}
+        return {
+            'SIC': self.output_conv_sic(x),
+            'SOD': self.output_conv_sod(x),
+            'FLOE': self.output_conv_floe(x)
+        }
