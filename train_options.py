@@ -3,7 +3,7 @@ from utils import CHARTS, FLOE_LOOKUP, SCENE_VARIABLES, SIC_LOOKUP, SOD_LOOKUP
 
 TRAIN_OPTIONS = {
     # -- Training options -- #
-    'path_to_processed_data': './data/ai4arctic_challenge/',  # Replace with data directory path.
+    'path_to_processed_data': './data/ai4arctic_challenge',  # Replace with data directory path.
     'path_to_env': './',  # Replace with environmment directory path.
     'lr': 0.0001,  # Optimizer learning rate.
     'epochs': 75,  # Number of epochs before training stop (default 50).

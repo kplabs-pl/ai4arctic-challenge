@@ -1,4 +1,5 @@
 clize
+dvc[ssh]
 einops
 ipywidgets
 jupyterlab
