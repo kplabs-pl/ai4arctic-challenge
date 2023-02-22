@@ -1,0 +1,3 @@
+simpleitk
+nnunet
+dvc[ssh]
