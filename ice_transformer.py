@@ -52,7 +52,7 @@ def merge_patches(
 
 
 def process_in_patches(
-        tensor: torch.Tensor, patch_size: int, transform: Callable[[torch.Tensor], torch.Tensor], progress: bool = False
+    tensor: torch.Tensor, patch_size: int, transform: Callable[[torch.Tensor], torch.Tensor], progress: bool = False
 ) -> torch.Tensor:
     raise_if_not_batched_3d_tensor(tensor)
     b, c, h, w = tensor.shape
@@ -82,7 +82,8 @@ class SpectralSpatialCrossTransformer(torch.nn.Module):
         self.ch_scale = ch_scale
 
         self.down_conv_in_self_attn_channel = torch.nn.Conv2d(
-            channels, channels, (ch_scale, ch_scale), stride=(ch_scale, ch_scale), padding='valid')
+            channels, channels, (ch_scale, ch_scale), stride=(ch_scale, ch_scale), padding='valid'
+        )
         self.up_out_self_attn_channel = torch.nn.Upsample(scale_factor=ch_scale)
 
         # Spatial and channel self attention
@@ -90,7 +91,8 @@ class SpectralSpatialCrossTransformer(torch.nn.Module):
         self.self_attn_channel = torch.nn.MultiheadAttention(channel_embed_size, num_heads, batch_first=True)
 
         self.down_conv_in_cross_attn_channel = torch.nn.Conv2d(
-            channels, channels, (ch_scale, ch_scale), stride=(ch_scale, ch_scale), padding='valid')
+            channels, channels, (ch_scale, ch_scale), stride=(ch_scale, ch_scale), padding='valid'
+        )
         self.up_out_cross_attn_channel = torch.nn.Upsample(scale_factor=ch_scale)
 
         # Spatial-channel and channel-spatial cross attention
@@ -145,7 +147,9 @@ class IceTransformer(torch.nn.Module):
 
         self.spc_spt_tf = SpectralSpatialCrossTransformer(channels, patch_size, 4, channel_embed_size)
 
-        self.final_conv = torch.nn.Conv2d(self.channels, self.channels, kernel_size=(1, 1), stride=(1, 1))
+        self.final_conv = torch.nn.Conv2d(
+            self.channels, self.channels, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1)
+        )
         self.output_conv_sic = torch.nn.Conv2d(self.channels, 12, kernel_size=(1, 1), stride=(1, 1))
         self.output_conv_sod = torch.nn.Conv2d(self.channels, 7, kernel_size=(1, 1), stride=(1, 1))
         self.output_conv_floe = torch.nn.Conv2d(self.channels, 8, kernel_size=(1, 1), stride=(1, 1))
@@ -156,8 +160,4 @@ class IceTransformer(torch.nn.Module):
 
         x = process_in_patches(x, self.patch_size, lambda p: self.spc_spt_tf(p), progress=patch_progress)
         x = self.final_conv(x)
-        return {
-            'SIC': self.output_conv_sic(x),
-            'SOD': self.output_conv_sod(x),
-            'FLOE': self.output_conv_floe(x)
-        }
+        return {'SIC': self.output_conv_sic(x), 'SOD': self.output_conv_sod(x), 'FLOE': self.output_conv_floe(x)}
