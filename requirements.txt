@@ -1,6 +1,7 @@
 clize
 dvc[ssh]
 einops
+gitpython
 ipywidgets
 jupyterlab
 matplotlib

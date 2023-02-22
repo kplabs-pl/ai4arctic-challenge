@@ -1,6 +1,7 @@
 import json
 import os
 import tempfile
+import time
 from pathlib import Path
 
 import clize
@@ -9,6 +10,7 @@ import numpy as np
 import torch
 import xarray as xr
 from dvc import repo
+from git import Repo
 from tqdm import tqdm
 
 from functions import chart_cbar
@@ -87,6 +89,18 @@ def make_preview(output: np.ndarray, masks: np.ndarray, scene_name: str, output_
     plt.close('all')
 
 
+def dump_meta(output_dir: Path, model_url: str):
+    gitrepo = Repo()
+    meta = {
+        'model_url': model_url,
+        'commit': str(gitrepo.rev_parse('HEAD')),
+        'repo_dirty': gitrepo.is_dirty(),
+        'timestamp': time.time(),
+    }
+    with open(output_dir / 'metadata.json', 'w') as f:
+        json.dump(meta, f)
+
+
 def main(
     model_url: str, *, output_dir: Path = Path('exports'), no_previews: bool = False, force_cpu_device: bool = False
 ):
@@ -125,6 +139,8 @@ def main(
     nc_file_path = output_dir / 'upload_package.nc'
     upload_package.to_netcdf(nc_file_path, mode='w', format='netcdf4', engine='netcdf4', encoding=encoding)
     print(f'Saved to {nc_file_path}')
+
+    dump_meta(output_dir, model_url)
 
 
 if __name__ == '__main__':
