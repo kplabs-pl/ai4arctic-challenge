@@ -85,7 +85,7 @@ def make_preview(output: np.ndarray, masks: np.ndarray, scene_name: str, output_
 
     plt.suptitle(f'Scene: {scene_name}', y=0.65)
     plt.subplots_adjust(left=0, bottom=0, right=1, top=1, wspace=0.5, hspace=-0)
-    fig.savefig(output_dir / 'f{scene_name}.png', format='png', dpi=128, bbox_inches='tight')
+    fig.savefig(output_dir / f'{scene_name}.png', format='png', dpi=128, bbox_inches='tight')
     plt.close('all')
 
 
