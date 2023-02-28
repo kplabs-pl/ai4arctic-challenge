@@ -66,6 +66,28 @@ def process_in_patches(
     return merged
 
 
+class SmoothFusionBlock(torch.nn.Module):
+    def __init__(self, channels: int):
+        super().__init__()
+
+        self.channels = channels
+
+        self.small_conv = torch.nn.Conv2d(channels, channels, (3, 3), padding=(1, 1))
+        self.small_bn = torch.nn.BatchNorm2d(channels)
+        self.medium_conv = torch.nn.Conv2d(channels, channels, (5, 5), padding=(2, 2))
+        self.medium_bn = torch.nn.BatchNorm2d(channels)
+        self.big_conv = torch.nn.Conv2d(channels, channels, (9, 9), padding=(4, 4))
+        self.large_bn = torch.nn.BatchNorm2d(channels)
+
+        self.out_relu = torch.nn.ReLU(channels)
+
+    def forward(self, x):
+        x_s = self.small_bn(self.small_conv(x))
+        x_m = self.medium_bn(self.medium_conv(x))
+        x_b = self.large_bn(self.big_conv(x))
+        return self.out_relu(x + x_s + x_m + x_b)
+
+
 class SpectralSpatialCrossTransformer(torch.nn.Module):
     def __init__(self, channels: int, spatial_size: int, num_heads: int, channel_embed_size: int):
         super().__init__()
@@ -80,6 +102,8 @@ class SpectralSpatialCrossTransformer(torch.nn.Module):
 
         self.channel_embed_hw = channel_embed_hw
         self.ch_scale = ch_scale
+
+        self.sep_conv_spatial = torch.nn.Conv2d(channels, channels, (3, 3), padding=(1, 1), groups=channels)
 
         self.down_conv_in_self_attn_channel = torch.nn.Conv2d(
             channels, channels, (ch_scale, ch_scale), stride=(ch_scale, ch_scale), padding='valid'
@@ -109,6 +133,7 @@ class SpectralSpatialCrossTransformer(torch.nn.Module):
         if c != self.channels:
             raise ValueError()
 
+        t_sp = self.sep_conv_spatial(x)
         t_sp = rearrange(x, 'b c h w -> b (h w) c')
 
         t_ch = self.down_conv_in_self_attn_channel(x)
@@ -144,20 +169,32 @@ class IceTransformer(torch.nn.Module):
 
         self.channels = channels
         self.patch_size = patch_size
+        self.out_conv_ch = 32
 
         self.spc_spt_tf = SpectralSpatialCrossTransformer(channels, patch_size, 4, channel_embed_size)
 
-        self.final_conv = torch.nn.Conv2d(
-            self.channels, self.channels, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1)
-        )
-        self.output_conv_sic = torch.nn.Conv2d(self.channels, 12, kernel_size=(1, 1), stride=(1, 1))
-        self.output_conv_sod = torch.nn.Conv2d(self.channels, 7, kernel_size=(1, 1), stride=(1, 1))
-        self.output_conv_floe = torch.nn.Conv2d(self.channels, 8, kernel_size=(1, 1), stride=(1, 1))
+        self.smooth_conv_1 = SmoothFusionBlock(channels)
+        self.smooth_conv_2 = SmoothFusionBlock(channels)
+
+        self.conv_sic = torch.nn.Conv2d(self.channels, self.out_conv_ch, kernel_size=(3, 3), padding=(1, 1))
+        self.conv_sod = torch.nn.Conv2d(self.channels, self.out_conv_ch, kernel_size=(3, 3), padding=(1, 1))
+        self.conv_floe = torch.nn.Conv2d(self.channels, self.out_conv_ch, kernel_size=(3, 3), padding=(1, 1))
+
+        self.output_conv_sic = torch.nn.Conv2d(self.out_conv_ch, 12, kernel_size=(1, 1), stride=(1, 1))
+        self.output_conv_sod = torch.nn.Conv2d(self.out_conv_ch, 7, kernel_size=(1, 1), stride=(1, 1))
+        self.output_conv_floe = torch.nn.Conv2d(self.out_conv_ch, 8, kernel_size=(1, 1), stride=(1, 1))
 
     def forward(self, x, patch_progress: bool = False):
         raise_if_not_batched_3d_tensor(x)
         b, c, h, w = x.shape
 
         x = process_in_patches(x, self.patch_size, lambda p: self.spc_spt_tf(p), progress=patch_progress)
-        x = self.final_conv(x)
-        return {'SIC': self.output_conv_sic(x), 'SOD': self.output_conv_sod(x), 'FLOE': self.output_conv_floe(x)}
+
+        x = self.smooth_conv_1(x)
+        x = self.smooth_conv_2(x)
+
+        return {
+            'SIC': self.output_conv_sic(self.conv_sic(x)),
+            'SOD': self.output_conv_sod(self.conv_sod(x)),
+            'FLOE': self.output_conv_floe(self.conv_floe(x)),
+        }
