@@ -1,11 +1,11 @@
-md5: 5e3f5b5f896be727d43cbc1d684594d6
+md5: 7251454bc31354c74248bdc53e993a0d
 frozen: true
 deps:
 - path: sar/ai4arctic_challenge_test
   repo:
     url: git@git.kplabs.pl:ml/data_registry.git
     rev: remote-sftp
-    rev_lock: eb080b8f702cc888147dfa1483057167b022ca50
+    rev_lock: d77516cb153a579de1590933ee04691fee53458d
 outs:
 - md5: 3ff2c619852686e63a6bfd59f57fa6f0.dir
   size: 2526231394

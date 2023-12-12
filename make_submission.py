@@ -12,11 +12,23 @@ import xarray as xr
 from dvc import repo
 from git import Repo
 from tqdm import tqdm
+import matplotlib
 
 from functions import chart_cbar
 from loaders import AI4ArcticChallengeTestDataset, get_variable_options
 from train import setup_device, setup_model
 from train_options import TRAIN_OPTIONS
+from utils import ICE_STRINGS
+
+matplotlib.use("pgf")
+matplotlib.rcParams.update(
+    {
+        "pgf.texsystem": "pdflatex",
+        'font.family': 'serif',
+        'text.usetex': True,
+        'pgf.rcfonts': False,
+    }
+)
 
 
 def setup_dataset(train_options) -> torch.utils.data.DataLoader:
@@ -65,14 +77,27 @@ def make_submission(
             )
 
         if previews_dir is not None:
-            make_preview(output, masks, scene_name, previews_dir, train_options)
+            make_preview(x, output, masks, scene_name, previews_dir, train_options)
 
     return upload_package
 
 
-def make_preview(output: np.ndarray, masks: np.ndarray, scene_name: str, output_dir: Path, train_options):
-    fig, axs = plt.subplots(nrows=1, ncols=3, figsize=(10, 10))
-    for idx, chart in enumerate(train_options['charts']):
+def make_preview(
+    x: np.ndarray, output: np.ndarray, masks: np.ndarray, scene_name: str, output_dir: Path, train_options
+):
+    fig, axs = plt.subplots(nrows=2, ncols=2, figsize=(6, 6))
+    axs = axs.flatten()
+
+    ax = axs[0]
+    inp = x[0][0].detach().numpy()
+    inp[masks] = np.nan
+    imshow_out = ax.imshow(inp, cmap='gray', vmin=np.nanquantile(inp, q=0.025), vmax=np.nanquantile(inp, q=0.975))
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_title('Sentinel-1 SAR primary')
+    plt.colorbar(imshow_out, fraction=0.043, pad=0.049, ax=ax)
+
+    for idx, chart in enumerate(train_options['charts'], start=1):
         ax = axs[idx]
         output[chart] = output[chart].astype(float)
         output[chart][masks] = np.nan
@@ -81,11 +106,11 @@ def make_preview(output: np.ndarray, masks: np.ndarray, scene_name: str, output_
         )
         ax.set_xticks([])
         ax.set_yticks([])
+        ax.set_title(ICE_STRINGS[chart])
         chart_cbar(ax=ax, n_classes=train_options['n_classes'][chart], chart=chart, cmap='jet')
 
-    plt.suptitle(f'Scene: {scene_name}', y=0.65)
     plt.subplots_adjust(left=0, bottom=0, right=1, top=1, wspace=0.5, hspace=-0)
-    fig.savefig(output_dir / f'{scene_name}.png', format='png', dpi=128, bbox_inches='tight')
+    fig.savefig(output_dir / f'{scene_name}.png', format='png', dpi=180, bbox_inches='tight')
     plt.close('all')
 
 
