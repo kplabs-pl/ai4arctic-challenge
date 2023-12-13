@@ -55,7 +55,7 @@ def make_preview(
     axs = axs.flatten()
 
     ax = axs[0]
-    inp = x[0][0].detach().numpy()
+    inp = x[0][0].detach().cpu().numpy()
     inp[masks['SIC']] = np.nan
     imshow_out = ax.imshow(inp, cmap='gray', vmin=np.nanquantile(inp, q=0.025), vmax=np.nanquantile(inp, q=0.975))
     ax.set_xticks([])
