@@ -184,7 +184,7 @@ class IceTransformer(torch.nn.Module):
         self.output_conv_sod = torch.nn.Conv2d(self.out_conv_ch, 7, kernel_size=(1, 1), stride=(1, 1))
         self.output_conv_floe = torch.nn.Conv2d(self.out_conv_ch, 8, kernel_size=(1, 1), stride=(1, 1))
 
-    def forward(self, x, patch_progress: bool = False):
+    def forward(self, x, patch_progress: bool = True):
         raise_if_not_batched_3d_tensor(x)
         b, c, h, w = x.shape
 

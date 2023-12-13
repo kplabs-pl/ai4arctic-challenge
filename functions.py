@@ -18,6 +18,7 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 from sklearn.metrics import r2_score, f1_score
+from utils import GROUP_NAMES
 
 # -- Proprietary modules -- #
 
