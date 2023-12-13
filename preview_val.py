@@ -130,9 +130,9 @@ def train(
 
         del inf_x, inf_y, masks, output  # Free memory.
 
-
-def main(preview_out_dir: Path, ckpt_url: str, *, force_cpu_device: bool = False):
-    train_options = setup_options(TRAIN_OPTIONS)
+# Model architecture ('unet' or `ice_transformer')
+def main(preview_out_dir: Path, model_arch: str, ckpt_url: str, *, force_cpu_device: bool = False):
+    train_options = setup_options(TRAIN_OPTIONS | { 'model': model_arch })
     print('Options initialised')
 
     device = setup_device(train_options) if not force_cpu_device else torch.device('cpu')
