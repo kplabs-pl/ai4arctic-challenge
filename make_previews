@@ -1,0 +1,2 @@
+python -m preview_val --force-cpu-device preview_val_tf ice_transformer 'ssh://ftp_ml:zCm5E0xc@mldisk.kplabs.pl:/ml_infrastructure_storage/mlflow/misc/artifacts/1/4c9c8b3b83ed459786f35c638f80b0ad/artifacts/ice_best_model.pt' && \
+python -m preview_val --force-cpu-device preview_val_unet unet 'ssh://ftp_ml:zCm5E0xc@mldisk.kplabs.pl:/ml_infrastructure_storage/mlflow/misc/artifacts/1/02d07b3791c84d8db33c50836b593e60/artifacts/ice_best_model.pt'
