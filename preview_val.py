@@ -116,7 +116,10 @@ def train(
 
         # - Ensures that no gradients are calculated, which otherwise take up a lot of space on the GPU.
         with torch.no_grad(), torch.cuda.amp.autocast(enabled=True if device == 'cuda' else False):
+            model = model.to(device)
             inf_x = inf_x.to(device, non_blocking=True)
+            inf_y = {k: inf_y[k].to(device) for k in inf_y}
+            masks = {k: masks[k].to(device) for k in masks}
             output = model(inf_x)
 
         # - Final output layer, and storing of non masked pixels.
@@ -124,6 +127,15 @@ def train(
             output[chart] = torch.argmax(output[chart], dim=1).squeeze().cpu().numpy().astype(np.float32)
             outputs_flat[chart] = np.append(outputs_flat[chart], output[chart][~masks[chart]])
             inf_y[chart] = inf_y[chart].cpu().numpy().astype(np.float32)
+            inf_ys_flat[chart] = np.append(inf_ys_flat[chart], inf_y[chart][~masks[chart]])
+
+        combined_score, scores = compute_metrics(
+            true=inf_ys_flat,
+            pred=outputs_flat,
+            charts=train_options['charts'],
+            metrics=train_options['chart_metric'],
+        )
+        print(name, combined_score, scores)
 
         make_preview(inf_x, output, masks, name, preview_out_dir, train_options)
         make_preview(inf_x, inf_y, masks, name + '_gt', preview_out_dir, train_options)
